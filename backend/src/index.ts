@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import supabase from './config/supabase.js';
 
 dotenv.config();
 
@@ -13,8 +14,13 @@ app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json());
 
-app.get('/api/health', (_req, res) => {
-  res.json({ success: true, message: 'API is running' });
+app.get('/api/health', async (_req, res) => {
+  const { error } = await supabase.from('profiles').select('id').limit(1);
+  res.json({
+    success: true,
+    message: 'API is running',
+    db: error ? 'DB connection failed' : 'DB connected'
+  });
 });
 
 const PORT = process.env.PORT || 5000;
