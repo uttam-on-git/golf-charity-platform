@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import supabase from './config/supabase.js';
 import authRoutes from './routes/auth.js';
 import scoreRoutes from './routes/scores.js';
+import charityRoutes from './routes/charities.js';
 
 dotenv.config();
 
@@ -27,6 +28,7 @@ app.get('/api/health', async (_req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/scores', scoreRoutes);
+app.use('/api/charities', charityRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
