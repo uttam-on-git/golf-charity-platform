@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import supabase from './config/supabase.js';
+import authRoutes from './routes/auth.js';
 
 dotenv.config();
 
@@ -22,6 +23,8 @@ app.get('/api/health', async (_req, res) => {
     db: error ? 'DB connection failed' : 'DB connected'
   });
 });
+
+app.use('/api/auth', authRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
