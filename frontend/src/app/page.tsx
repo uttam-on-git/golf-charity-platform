@@ -52,7 +52,7 @@ export default function HomePage() {
           className="text-gray-400 text-lg md:text-xl max-w-2xl mx-auto mb-10"
         >
           Track your Stableford scores, enter monthly prize draws,
-          and support a charity you care about — all in one place.
+          and support a charity you care about - all in one place.
         </motion.p>
 
         <motion.div
@@ -155,7 +155,7 @@ export default function HomePage() {
 
         <div className="grid md:grid-cols-3 gap-6">
           {[
-            { match: '5 Numbers', icon: '🏆', pool: '40% of pool', note: 'Jackpot — rolls over if unclaimed', highlight: true },
+            { match: '5 Numbers', icon: '🏆', pool: '40% of pool', note: 'Jackpot - rolls over if unclaimed', highlight: true },
             { match: '4 Numbers', icon: '🥈', pool: '35% of pool', note: 'Split equally among winners', highlight: false },
             { match: '3 Numbers', icon: '🥉', pool: '25% of pool', note: 'Split equally among winners', highlight: false },
           ].map((tier, i) => (
@@ -196,7 +196,7 @@ export default function HomePage() {
             </h2>
             <p className="text-gray-400 text-lg max-w-xl mx-auto mb-8">
               A minimum of 10% of your subscription goes to a charity of your choice.
-              You can choose to give more — up to 100%.
+              You can choose to give more - up to 100%.
             </p>
             <Link
               href="/register"
