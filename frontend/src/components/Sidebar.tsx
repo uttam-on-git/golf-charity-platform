@@ -108,7 +108,7 @@ export default function Sidebar() {
       <aside className="hidden md:flex flex-col w-[240px] bg-[#0f0f0f] border-r border-[#1e1e1e] h-screen shrink-0 z-40">
         <div className="h-20 flex items-center px-6 border-b border-[#1e1e1e]">
           <Link
-            href="/dashboard"
+            href="/"
             className="flex items-center gap-2.5 text-zinc-100 font-semibold text-lg tracking-tight hover:opacity-90 transition-opacity"
           >
             <Logo size={32} className="drop-shadow-[0_0_15px_rgba(16,185,129,0.2)]" />

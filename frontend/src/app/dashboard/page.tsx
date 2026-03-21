@@ -1,5 +1,6 @@
 'use client';
 
+import axios from 'axios';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -113,7 +114,7 @@ export default function DashboardPage() {
       setError('');
 
       try {
-        const [scoresRes, drawsRes, winningsRes, subscriptionRes, profileRes] = await Promise.all([
+        const [scoresRes, drawsRes, winningsRes, subscriptionRes, profileRes] = await Promise.allSettled([
           api.get('/scores'),
           api.get('/draws'),
           api.get('/draws/me/winnings'),
@@ -121,11 +122,26 @@ export default function DashboardPage() {
           api.get('/auth/me'),
         ]);
 
-        const nextScores = Array.isArray(scoresRes.data?.data) ? scoresRes.data.data : [];
-        const nextDraws = Array.isArray(drawsRes.data?.data) ? drawsRes.data.data : [];
-        const nextWinnings = Array.isArray(winningsRes.data?.data) ? winningsRes.data.data : [];
-        const nextSubscription = (subscriptionRes.data?.data as Subscription | null) ?? null;
-        const profile = (profileRes.data?.data as ProfileResponse | null) ?? null;
+        const getResultData = <T,>(
+          result: PromiseSettledResult<{ data?: { data?: T } }>,
+          fallback: T,
+        ): T => {
+          if (result.status === 'fulfilled') {
+            return (result.value.data?.data as T | undefined) ?? fallback;
+          }
+
+          if (axios.isAxiosError(result.reason) && result.reason.response?.status === 402) {
+            return fallback;
+          }
+
+          throw result.reason;
+        };
+
+        const nextScores = getResultData<Score[]>(scoresRes, []);
+        const nextDraws = getResultData<Draw[]>(drawsRes, []);
+        const nextWinnings = getResultData<Winning[]>(winningsRes, []);
+        const nextSubscription = getResultData<Subscription | null>(subscriptionRes, null);
+        const profile = getResultData<ProfileResponse | null>(profileRes, null);
         const currentCharityId = profile?.charity_id ?? user?.charity_id;
         let currentCharity: Charity | null = null;
 
