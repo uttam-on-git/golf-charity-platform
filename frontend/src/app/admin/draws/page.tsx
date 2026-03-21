@@ -1,6 +1,8 @@
-'use client';
+﻿'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+
+import { SectionCard, StatCard } from '@/components/dashboard/overview-primitives';
 import api from '@/lib/axios';
 
 interface DrawResult {
@@ -17,6 +19,19 @@ interface Draw {
   jackpot_rolled_over: boolean;
 }
 
+const matchLabel: Record<string, string> = {
+  '5_match': '5 Match',
+  '4_match': '4 Match',
+  '3_match': '3 Match',
+};
+
+function formatMonth(month: string) {
+  return new Date(`${month}-01`).toLocaleDateString('en-GB', {
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
 export default function AdminDrawsPage() {
   const [mode, setMode] = useState<'random' | 'algorithmic'>('random');
   const [prizePool, setPrizePool] = useState('');
@@ -24,20 +39,30 @@ export default function AdminDrawsPage() {
   const [draws, setDraws] = useState<Draw[]>([]);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
+  const [error, setError] = useState('');
 
-  useEffect(() => { fetchDraws(); }, []);
+  useEffect(() => {
+    void fetchDraws();
+  }, []);
 
   const fetchDraws = async () => {
-    const res = await api.get('/draws');
-    setDraws(res.data.data || []);
+    try {
+      const res = await api.get('/draws');
+      setDraws(res.data.data || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load draws');
+    }
   };
 
   const handleSimulate = async () => {
     setLoading(true);
     setSimulation(null);
+    setError('');
     try {
       const res = await api.post('/draws/simulate', { mode });
       setSimulation(res.data.data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Simulation failed');
     } finally {
       setLoading(false);
     }
@@ -46,6 +71,7 @@ export default function AdminDrawsPage() {
   const handleRunDraw = async () => {
     if (!confirm('Run the official draw for this month?')) return;
     setRunning(true);
+    setError('');
     try {
       await api.post('/draws/run', {
         mode,
@@ -53,160 +79,244 @@ export default function AdminDrawsPage() {
       });
       await fetchDraws();
       setSimulation(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Draw run failed');
     } finally {
       setRunning(false);
     }
   };
 
   const handlePublish = async (id: string) => {
-    await api.post(`/draws/${id}/publish`);
-    await fetchDraws();
+    setError('');
+    try {
+      await api.post(`/draws/${id}/publish`);
+      await fetchDraws();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Publish failed');
+    }
   };
 
-  const matchLabel: Record<string, string> = {
-    '5_match': '5 Match',
-    '4_match': '4 Match',
-    '3_match': '3 Match',
-  };
+  const draftCount = useMemo(() => draws.filter((draw) => draw.status === 'draft').length, [draws]);
+  const publishedCount = useMemo(() => draws.filter((draw) => draw.status !== 'draft').length, [draws]);
 
   return (
-    <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold text-white mb-1">Draw Control</h1>
-      <p className="text-gray-400 text-sm mb-8">Configure and run monthly draws</p>
+    <div>
+      <header className="mb-8">
+        <h1 className="text-2xl md:text-3xl font-semibold text-zinc-100 tracking-tight">Draw Control</h1>
+        <p className="text-zinc-500 mt-1.5 text-sm md:text-base">
+          Simulate outcomes, run official draws, and publish results using the same visual system as the player dashboard.
+        </p>
+      </header>
 
-      {/* Draw config */}
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-6">
-        <h2 className="text-white font-semibold mb-4">Draw Settings</h2>
-
-        <div className="mb-4">
-          <label className="text-sm text-gray-400 mb-2 block">Draw Mode</label>
-          <div className="flex gap-3">
-            {(['random', 'algorithmic'] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition capitalize
-                  ${mode === m
-                    ? 'bg-green-500 text-black'
-                    : 'bg-gray-800 text-gray-400 hover:text-white'
-                  }`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
+      {error ? (
+        <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-sm rounded-xl px-4 py-3 mb-6">
+          {error}
         </div>
+      ) : null}
 
-        <div className="mb-6">
-          <label className="text-sm text-gray-400 mb-1 block">Prize Pool Total (£)</label>
-          <input
-            type="number"
-            value={prizePool}
-            onChange={(e) => setPrizePool(e.target.value)}
-            className="w-full bg-gray-800 text-white rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-500"
-            placeholder="e.g. 500"
-          />
-        </div>
-
-        <div className="flex gap-3">
-          <button
-            onClick={handleSimulate}
-            disabled={loading}
-            className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white text-sm font-medium py-2.5 rounded-lg transition"
-          >
-            {loading ? 'Simulating...' : '👁 Simulate'}
-          </button>
-          <button
-            onClick={handleRunDraw}
-            disabled={running}
-            className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black text-sm font-semibold py-2.5 rounded-lg transition"
-          >
-            {running ? 'Running...' : 'Run Draw'}
-          </button>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6 mb-8 md:mb-10">
+        <StatCard
+          label="Draw Mode"
+          value={mode === 'random' ? 'Random' : 'Algorithmic'}
+          suffix="selected"
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M16 3h5v5" />
+              <path d="M4 20 21 3" />
+              <path d="M21 16v5h-5" />
+              <path d="m15 15 6 6" />
+              <path d="M4 4h5v5" />
+              <path d="m9 9-6-6" />
+            </svg>
+          }
+        />
+        <StatCard
+          label="Draft Draws"
+          value={String(draftCount)}
+          suffix="awaiting publish"
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+          }
+        />
+        <StatCard
+          label="Published Draws"
+          value={String(publishedCount)}
+          suffix="visible to players"
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+            </svg>
+          }
+        />
       </div>
 
-      {/* Simulation result */}
-      {simulation && (
-        <div className="bg-gray-900 border border-yellow-500/30 rounded-2xl p-6 mb-6">
-          <p className="text-yellow-400 text-sm font-medium mb-4">
-            👁 Simulation Preview - not saved
-          </p>
-
-          <div className="flex gap-2 mb-4">
-            {simulation.winning_numbers.map((n) => (
-              <div
-                key={n}
-                className="w-9 h-9 rounded-full bg-green-500 text-black text-sm font-bold flex items-center justify-center"
-              >
-                {n}
+      <div className="grid grid-cols-1 xl:grid-cols-[0.95fr_1.05fr] gap-4 md:gap-6">
+        <SectionCard
+          title="Run Monthly Draw"
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#10b981]" aria-hidden="true">
+              <path d="M12 2v20" />
+              <path d="m19 9-7-7-7 7" />
+            </svg>
+          }
+        >
+          <div className="space-y-5">
+            <div>
+              <label className="text-sm text-zinc-400 mb-2 block font-medium">Draw mode</label>
+              <div className="flex gap-3">
+                {(['random', 'algorithmic'] as const).map((entry) => (
+                  <button
+                    key={entry}
+                    type="button"
+                    onClick={() => setMode(entry)}
+                    className={`rounded-xl px-4 py-2.5 text-sm font-medium capitalize transition ${mode === entry ? 'bg-[#10b981] text-[#0a0a0a]' : 'bg-[#0a0a0a] border border-[#1e1e1e] text-zinc-300 hover:border-[#2a2a2a]'}`}
+                  >
+                    {entry}
+                  </button>
+                ))}
               </div>
-            ))}
+            </div>
+
+            <div>
+              <label className="text-sm text-zinc-400 mb-2 block font-medium">Prize pool total</label>
+              <input
+                type="number"
+                value={prizePool}
+                onChange={(e) => setPrizePool(e.target.value)}
+                className="w-full rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] px-4 py-3 text-sm text-white outline-none transition focus:border-[#10b981] focus:ring-2 focus:ring-[#10b981]/20"
+                placeholder="e.g. 500"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleSimulate}
+                disabled={loading}
+                className="flex-1 rounded-xl bg-[#0a0a0a] border border-[#1e1e1e] py-3 text-sm font-medium text-white transition hover:border-[#2a2a2a] disabled:opacity-50"
+              >
+                {loading ? 'Simulating...' : 'Simulate'}
+              </button>
+              <button
+                type="button"
+                onClick={handleRunDraw}
+                disabled={running}
+                className="flex-1 rounded-xl bg-[#10b981] py-3 text-sm font-semibold text-[#0a0a0a] transition hover:bg-emerald-400 disabled:opacity-50"
+              >
+                {running ? 'Running...' : 'Run Draw'}
+              </button>
+            </div>
           </div>
+        </SectionCard>
 
-          <p className="text-gray-400 text-sm mb-2">
-            Winners: {simulation.winners.length}
-          </p>
+        <SectionCard
+          title="Simulation Preview"
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-300" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" />
+              <polygon points="10 8 16 12 10 16 10 8" />
+            </svg>
+          }
+        >
+          {!simulation ? (
+            <div className="bg-[#0a0a0a] border border-dashed border-[#2a2a2a] rounded-xl px-5 py-8 text-center text-sm text-zinc-500">
+              Run a simulation to preview winning numbers and potential winners before publishing.
+            </div>
+          ) : (
+            <div className="space-y-5">
+              <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 px-4 py-3 text-sm text-yellow-100">
+                Preview only. Nothing has been saved yet.
+              </div>
 
-          {simulation.winners.length > 0 && (
-            <div className="space-y-1">
-              {simulation.winners.map((w, i) => (
-                <div key={i} className="flex justify-between text-xs text-gray-500">
-                  <span>{w.user_id.slice(0, 8)}...</span>
-                  <span>{matchLabel[w.match_type]}</span>
+              <div className="flex gap-2 flex-wrap">
+                {simulation.winning_numbers.map((number) => (
+                  <div key={number} className="w-10 h-10 rounded-full bg-[#10b981] text-[#0a0a0a] font-bold text-sm flex items-center justify-center">
+                    {number}
+                  </div>
+                ))}
+              </div>
+
+              <div className="text-sm text-zinc-400">Projected winners: {simulation.winners.length}</div>
+
+              {simulation.winners.length > 0 ? (
+                <div className="space-y-2">
+                  {simulation.winners.map((winner, index) => (
+                    <div key={`${winner.user_id}-${index}`} className="flex items-center justify-between rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] px-4 py-3 text-sm">
+                      <span className="text-zinc-300">{winner.user_id.slice(0, 8)}...</span>
+                      <span className="text-[#10b981] font-medium">{matchLabel[winner.match_type]}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {simulation.jackpot_rolled_over ? (
+                <div className="text-xs text-yellow-300 uppercase tracking-[0.2em]">Jackpot would roll over</div>
+              ) : null}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      <div className="mt-8 md:mt-10">
+        <SectionCard
+          title="All Draws"
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="18" rx="2" />
+              <path d="M16 2v4" />
+              <path d="M8 2v4" />
+              <path d="M3 10h18" />
+            </svg>
+          }
+          action={<span className="text-xs text-zinc-500">{draws.length} total</span>}
+        >
+          {draws.length === 0 ? (
+            <div className="bg-[#0a0a0a] border border-dashed border-[#2a2a2a] rounded-xl px-5 py-8 text-center text-sm text-zinc-500">
+              No draws yet.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {draws.map((draw) => (
+                <div key={draw.id} className="bg-[#0a0a0a] border border-[#1e1e1e] rounded-xl p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div>
+                    <p className="text-white font-medium">{formatMonth(draw.month)}</p>
+                    <div className="flex gap-1.5 mt-3 flex-wrap">
+                      {draw.winning_numbers?.map((number) => (
+                        <div key={number} className="w-8 h-8 rounded-full bg-[#10b981] text-[#0a0a0a] text-xs font-bold flex items-center justify-center">
+                          {number}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 self-start md:self-center">
+                    {draw.jackpot_rolled_over ? (
+                      <span className="text-[11px] px-2 py-1 rounded-full bg-yellow-500/10 text-yellow-300 border border-yellow-500/20">
+                        Rolled over
+                      </span>
+                    ) : null}
+                    {draw.status === 'draft' ? (
+                      <button
+                        type="button"
+                        onClick={() => void handlePublish(draw.id)}
+                        className="rounded-lg bg-[#10b981] px-3 py-2 text-xs font-semibold text-[#0a0a0a] transition hover:bg-emerald-400"
+                      >
+                        Publish
+                      </button>
+                    ) : (
+                      <span className="text-xs bg-[#10b981]/10 text-[#10b981] px-2.5 py-1 rounded-full border border-[#10b981]/20">
+                        Published
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           )}
-
-          {simulation.jackpot_rolled_over && (
-            <p className="text-yellow-400 text-xs mt-3">Jackpot would roll over</p>
-          )}
-        </div>
-      )}
-
-      {/* Existing draws */}
-      <h2 className="text-white font-semibold mb-3">All Draws</h2>
-      {draws.length === 0 ? (
-        <p className="text-gray-500 text-sm">No draws yet.</p>
-      ) : (
-        <div className="space-y-3">
-          {draws.map((draw) => (
-            <div
-              key={draw.id}
-              className="bg-gray-900 border border-gray-800 rounded-2xl p-5 flex items-center justify-between"
-            >
-              <div>
-                <p className="text-white font-medium">{draw.month}</p>
-                <div className="flex gap-1.5 mt-2">
-                  {draw.winning_numbers?.map((n) => (
-                    <div
-                      key={n}
-                      className="w-7 h-7 rounded-full bg-green-500 text-black text-xs font-bold flex items-center justify-center"
-                    >
-                      {n}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="text-right">
-                {draw.status === 'draft' ? (
-                  <button
-                    onClick={() => handlePublish(draw.id)}
-                    className="bg-green-500 hover:bg-green-400 text-black text-xs font-semibold px-3 py-1.5 rounded-lg transition"
-                  >
-                    Publish
-                  </button>
-                ) : (
-                  <span className="text-xs bg-green-500/10 text-green-400 px-2 py-1 rounded-full">
-                    Published
-                  </span>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+        </SectionCard>
+      </div>
     </div>
   );
 }

@@ -1,15 +1,17 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+
+import Logo from '@/components/Logo';
 import { useAuth } from '@/context/AuthContext';
 
 const links = [
-  { label: 'Overview',       href: '/admin' },
-  { label: 'Users',          href: '/admin/users' },
-  { label: 'Draw Control',   href: '/admin/draws' },
-  { label: 'Charities',      href: '/admin/charities' },
-  { label: 'Winners',        href: '/admin/winners' },
+  { label: 'Overview', href: '/admin' },
+  { label: 'Users', href: '/admin/users' },
+  { label: 'Draw Control', href: '/admin/draws' },
+  { label: 'Charities', href: '/admin/charities' },
+  { label: 'Winners', href: '/admin/winners' },
 ];
 
 export default function AdminSidebar() {
@@ -19,7 +21,13 @@ export default function AdminSidebar() {
   return (
     <aside className="w-60 min-h-screen bg-gray-900 border-r border-gray-800 flex flex-col">
       <div className="px-6 py-5 border-b border-gray-800">
-        <span className="text-white font-bold">Admin Panel</span>
+        <Link
+          href="/admin"
+          className="flex items-center gap-2.5 text-[#10b981] font-semibold text-lg tracking-tight hover:opacity-90 transition-opacity"
+        >
+          <Logo size={32} className="drop-shadow-[0_0_15px_rgba(16,185,129,0.2)]" />
+          <span>GolfCharity</span>
+        </Link>
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1">
@@ -27,11 +35,11 @@ export default function AdminSidebar() {
           <Link
             key={link.href}
             href={link.href}
-            className={`flex items-center px-3 py-2.5 rounded-lg text-sm transition
-              ${pathname === link.href
+            className={`flex items-center px-3 py-2.5 rounded-lg text-sm transition ${
+              pathname === link.href
                 ? 'bg-green-500/10 text-green-400 font-medium'
                 : 'text-gray-400 hover:text-white hover:bg-gray-800'
-              }`}
+            }`}
           >
             {link.label}
           </Link>
@@ -41,7 +49,7 @@ export default function AdminSidebar() {
       <div className="px-4 py-4 border-t border-gray-800">
         <p className="text-xs text-gray-500 truncate mb-2">{user?.email}</p>
         <Link href="/dashboard" className="text-xs text-gray-500 hover:text-white block mb-2">
-          ← Back to Dashboard
+          {'<- Back to Dashboard'}
         </Link>
         <button
           onClick={logout}
