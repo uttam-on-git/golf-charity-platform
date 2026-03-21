@@ -3,6 +3,7 @@
 import { useEffect, useEffectEvent, useMemo, useState } from 'react';
 
 import { SectionCard, StatCard } from '@/components/dashboard/overview-primitives';
+import { AdminPageLoader } from '@/components/loading/LoadingUI';
 import api from '@/lib/axios';
 
 interface Stats {
@@ -104,7 +105,7 @@ export default function AdminOverview() {
       ) : null}
 
       {loading ? (
-        <p className="text-zinc-500 text-sm animate-pulse">Loading admin stats...</p>
+        <AdminPageLoader />
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6 mb-8 md:mb-10">

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { SectionCard, StatCard } from '@/components/dashboard/overview-primitives';
+import { ListSkeleton } from '@/components/loading/LoadingUI';
 import api from '@/lib/axios';
 
 interface Winner {
@@ -144,7 +145,7 @@ export default function AdminWinnersPage() {
         action={<span className="text-xs text-zinc-500">{winners.length} entries</span>}
       >
         {loading ? (
-          <p className="text-zinc-500 text-sm animate-pulse">Loading winners...</p>
+          <ListSkeleton rows={5} />
         ) : winners.length === 0 ? (
           <div className="bg-[#0a0a0a] border border-dashed border-[#2a2a2a] rounded-xl px-5 py-8 text-center text-sm text-zinc-500">
             No winners recorded yet.

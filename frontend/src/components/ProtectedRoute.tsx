@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/context/AuthContext';
+import { CenteredAppLoader } from '@/components/loading/LoadingUI';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
@@ -15,11 +16,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   }, [user, loading, router]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950">
-        <div className="text-green-400 text-sm animate-pulse">Loading...</div>
-      </div>
-    );
+    return <CenteredAppLoader title="Loading your dashboard" subtitle="Checking your session and unlocking your member area." />;
   }
 
   if (!user) return null;

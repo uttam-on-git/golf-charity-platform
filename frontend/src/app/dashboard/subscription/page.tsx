@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 import { SectionCard, StatCard } from '@/components/dashboard/overview-primitives';
+import { DashboardPageLoader } from '@/components/loading/LoadingUI';
 import api from '@/lib/axios';
 
 interface Subscription {
@@ -106,7 +107,7 @@ export default function SubscriptionPage() {
   }, [sub]);
 
   if (loading) {
-    return <p className="text-zinc-500 animate-pulse text-sm">Loading subscription details...</p>;
+    return <DashboardPageLoader title="Loading subscription details" subtitle="Pulling your plan, renewal timing, and billing status." />;
   }
 
   return (

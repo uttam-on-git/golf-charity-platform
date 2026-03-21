@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { SectionCard, StatCard } from '@/components/dashboard/overview-primitives';
+import { DashboardPageLoader } from '@/components/loading/LoadingUI';
 import api from '@/lib/axios';
 
 interface Draw {
@@ -72,7 +73,7 @@ export default function DrawsPage() {
   const latestDraw = draws[0];
 
   if (loading) {
-    return <p className="text-zinc-500 text-sm animate-pulse">Loading draw history...</p>;
+    return <DashboardPageLoader title="Loading draw history" subtitle="Fetching published draws, prize pools, and your winnings." />;
   }
 
   return (

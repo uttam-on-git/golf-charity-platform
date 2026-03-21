@@ -4,6 +4,7 @@ import axios from 'axios';
 import { SyntheticEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { SectionCard, StatCard } from '@/components/dashboard/overview-primitives';
+import { ListSkeleton } from '@/components/loading/LoadingUI';
 import api from '@/lib/axios';
 
 interface Score {
@@ -218,7 +219,7 @@ export default function ScoresPage() {
           action={<span className="text-xs text-zinc-500">{scores.length}/5 stored</span>}
         >
           {fetching ? (
-            <p className="text-zinc-500 text-sm animate-pulse">Loading scores...</p>
+            <ListSkeleton rows={4} />
           ) : scores.length === 0 ? (
             <div className="bg-[#0a0a0a] border border-dashed border-[#2a2a2a] rounded-xl px-5 py-8 text-center text-sm text-zinc-500">
               No scores yet. Add your first round to start building your draw numbers.

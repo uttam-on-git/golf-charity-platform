@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { SectionCard, StatCard } from '@/components/dashboard/overview-primitives';
+import { ListSkeleton } from '@/components/loading/LoadingUI';
 import api from '@/lib/axios';
 
 interface Charity {
@@ -14,8 +15,23 @@ interface Charity {
 }
 
 interface ProfileResponse {
-  charity_id?: string | null;
+  charity_id?: string | number | null;
   charities?: { name?: string | null } | null;
+}
+
+function resolveSelectedCharity(
+  charities: Charity[],
+  charityId?: string | number | null,
+  charityName?: string | null,
+) {
+  const byId = charities.find((charity) => String(charity.id) === String(charityId));
+  if (byId) return byId;
+
+  if (charityName) {
+    return charities.find((charity) => charity.name === charityName) ?? null;
+  }
+
+  return null;
 }
 
 function charityBadge(name: string) {
@@ -55,7 +71,7 @@ export default function CharityPage() {
       const profile = (profileRes.data.data || {}) as ProfileResponse;
 
       setCharities(nextCharities);
-      if (profile.charity_id) setSelected(profile.charity_id);
+      if (profile.charity_id) setSelected(String(profile.charity_id));
       setProfileCharityName(profile.charities?.name ?? null);
       setPercent(10);
     } catch (err) {
@@ -86,8 +102,19 @@ export default function CharityPage() {
         charity_id: selected,
         contribution_percent: percent,
       });
-      const current = charities.find((charity) => charity.id === selected);
-      setProfileCharityName(current?.name ?? profileCharityName);
+
+      const profileRes = await api.get('/auth/me');
+      const refreshedProfile = (profileRes.data.data || {}) as ProfileResponse;
+      const currentId = refreshedProfile.charity_id ?? selected;
+      const currentRes = await api.get(`/charities/${currentId}`);
+      const current = (currentRes.data.data as Charity | null) ?? resolveSelectedCharity(
+        charities,
+        currentId,
+        refreshedProfile.charities?.name ?? null,
+      );
+
+      setSelected(String(currentId));
+      setProfileCharityName(refreshedProfile.charities?.name ?? current?.name ?? profileCharityName);
       setMessage('Charity selection updated successfully.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update charity');
@@ -174,7 +201,7 @@ export default function CharityPage() {
           />
 
           {fetching ? (
-            <p className="text-zinc-500 text-sm animate-pulse">Loading charities...</p>
+            <ListSkeleton rows={5} />
           ) : (
             <div className="space-y-3 max-h-[540px] overflow-y-auto pr-1 dashboard-scroll">
               {charities.map((charity) => {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/context/AuthContext';
+import { CenteredAppLoader } from '@/components/loading/LoadingUI';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
@@ -20,11 +21,7 @@ export default function AdminRoute({ children }: { children: React.ReactNode }) 
   }, [loading, router, user]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950">
-        <p className="text-green-400 text-sm animate-pulse">Checking access...</p>
-      </div>
-    );
+    return <CenteredAppLoader title="Verifying admin access" subtitle="Checking your permissions and preparing the control panel." />;
   }
 
   if (!user || user.role !== 'admin') return null;
