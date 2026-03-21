@@ -7,6 +7,7 @@ import supabase from './config/supabase.js';
 import authRoutes from './routes/auth.js';
 import scoreRoutes from './routes/scores.js';
 import charityRoutes from './routes/charities.js';
+import subscriptionRoutes from './routes/subscriptions.js';
 
 dotenv.config();
 
@@ -15,6 +16,7 @@ const app = express();
 app.use(helmet());
 app.use(cors());
 app.use(morgan('dev'));
+app.use('/api/subscriptions/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
 app.get('/api/health', async (_req, res) => {
@@ -29,6 +31,7 @@ app.get('/api/health', async (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/scores', scoreRoutes);
 app.use('/api/charities', charityRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

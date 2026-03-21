@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import axios from 'axios';
 import api from '@/lib/axios';
 
 interface Score {
@@ -18,16 +19,38 @@ export default function ScoresPage() {
   const [error, setError] = useState('');
   const [fetching, setFetching] = useState(true);
 
-  const fetchScores = async () => {
+  const getErrorMessage = (err: unknown, fallback: string) => {
+    if (axios.isAxiosError(err)) {
+      const message = err.response?.data?.error;
+      if (typeof message === 'string' && message.trim()) {
+        return message;
+      }
+    }
+
+    if (err instanceof Error && err.message.trim()) {
+      return err.message;
+    }
+
+    return fallback;
+  };
+
+  const fetchScores = useCallback(async () => {
+    setFetching(true);
     try {
       const res = await api.get('/scores');
-      setScores(res.data.data);
+      setScores(Array.isArray(res.data?.data) ? res.data.data : []);
+      setError('');
+    } catch (err: unknown) {
+      setScores([]);
+      setError(getErrorMessage(err, 'Failed to load scores'));
     } finally {
       setFetching(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchScores(); }, []);
+  useEffect(() => {
+    fetchScores();
+  }, [fetchScores]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,23 +58,27 @@ export default function ScoresPage() {
     setLoading(true);
     try {
       await api.post('/scores', {
-        score: parseInt(score),
+        score: parseInt(score, 10),
         played_at: playedAt,
       });
       setScore('');
       setPlayedAt('');
       await fetchScores();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to add score';
-      setError(msg);
+      setError(getErrorMessage(err, 'Failed to add score'));
     } finally {
       setLoading(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    await api.delete(`/scores/${id}`);
-    await fetchScores();
+    setError('');
+    try {
+      await api.delete(`/scores/${id}`);
+      await fetchScores();
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to delete score'));
+    }
   };
 
   return (

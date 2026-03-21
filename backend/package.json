@@ -20,7 +20,8 @@
     "express": "^5.2.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
-    "morgan": "^1.10.1"
+    "morgan": "^1.10.1",
+    "stripe": "^20.4.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -29,6 +30,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/morgan": "^1.9.10",
     "@types/node": "^25.5.0",
+    "@types/stripe": "^8.0.416",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"

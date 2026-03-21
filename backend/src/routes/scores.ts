@@ -1,11 +1,12 @@
 import { Router, Response } from 'express';
 import supabase from '../config/supabase.js';
-import { authenticate, AuthRequest } from '../middleware/auth.js';
+import { authenticate, requireActiveSubscription, AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 
 // All score routes require auth
 router.use(authenticate);
+router.use(requireActiveSubscription);
 
 // GET /api/scores - get my scores
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {

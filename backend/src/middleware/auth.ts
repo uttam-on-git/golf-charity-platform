@@ -1,12 +1,35 @@
 import { Request, Response, NextFunction } from 'express';
 import supabase from '../config/supabase.js';
 
+interface UserSubscription {
+  status: string;
+  renews_at: string | null;
+  stripe_subscription_id: string | null;
+}
+
 export interface AuthRequest extends Request {
   user?: {
     id: string;
     email: string;
     role: string;
   };
+  subscription?: UserSubscription | null;
+}
+
+function isSubscriptionActive(subscription: UserSubscription | null | undefined): boolean {
+  if (!subscription) {
+    return false;
+  }
+
+  if (subscription.status !== 'active') {
+    return false;
+  }
+
+  if (!subscription.renews_at) {
+    return false;
+  }
+
+  return new Date(subscription.renews_at).getTime() > Date.now();
 }
 
 export const authenticate = async (
@@ -43,6 +66,16 @@ export const authenticate = async (
     role: profile?.role || 'subscriber',
   };
 
+  const { data: subscription } = await supabase
+    .from('subscriptions')
+    .select('status, renews_at, stripe_subscription_id')
+    .eq('user_id', data.user.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  req.subscription = subscription ?? null;
+
   next();
 };
 
@@ -55,5 +88,22 @@ export const requireAdmin = (
     res.status(403).json({ success: false, error: 'Admin access only' });
     return;
   }
+  next();
+};
+
+export const requireActiveSubscription = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): void => {
+  if (!isSubscriptionActive(req.subscription)) {
+    res.status(402).json({
+      success: false,
+      error: 'Active subscription required',
+      code: 'SUBSCRIPTION_REQUIRED',
+    });
+    return;
+  }
+
   next();
 };
