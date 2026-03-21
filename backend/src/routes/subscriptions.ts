@@ -58,10 +58,104 @@ async function syncSubscriptionFromStripe(
     ? new Date(renewsAt * 1000).toISOString()
     : null;
 
-  await supabase
+  const { error } = await supabase
     .from("subscriptions")
     .update(updatePayload)
     .eq("stripe_subscription_id", subscription.id);
+
+  if (error) {
+    throw new Error(
+      `Failed to sync subscription ${subscription.id}: ${error.message}`,
+    );
+  }
+}
+
+async function saveSubscriptionRecord({
+  userId,
+  plan,
+  status,
+  customerId,
+  subscriptionId,
+  renewsAt,
+}: {
+  userId: string;
+  plan: string;
+  status: "active" | "cancelled" | "lapsed";
+  customerId: string;
+  subscriptionId: string;
+  renewsAt: string;
+}): Promise<void> {
+  const payload = {
+    user_id: userId,
+    plan,
+    status,
+    stripe_customer_id: customerId,
+    stripe_subscription_id: subscriptionId,
+    renews_at: renewsAt,
+  };
+
+  const { data: existingBySubscription, error: existingBySubscriptionError } =
+    await supabase
+      .from("subscriptions")
+      .select("id")
+      .eq("stripe_subscription_id", subscriptionId)
+      .maybeSingle();
+
+  if (existingBySubscriptionError) {
+    throw new Error(
+      `Failed to check existing subscription by stripe_subscription_id: ${existingBySubscriptionError.message}`,
+    );
+  }
+
+  if (existingBySubscription) {
+    const { error: updateError } = await supabase
+      .from("subscriptions")
+      .update(payload)
+      .eq("id", existingBySubscription.id);
+
+    if (updateError) {
+      throw new Error(
+        `Failed to update subscription by stripe_subscription_id: ${updateError.message}`,
+      );
+    }
+
+    return;
+  }
+
+  const { data: existingByUser, error: existingByUserError } = await supabase
+    .from("subscriptions")
+    .select("id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (existingByUserError) {
+    throw new Error(
+      `Failed to check existing subscription by user_id: ${existingByUserError.message}`,
+    );
+  }
+
+  if (existingByUser) {
+    const { error: updateError } = await supabase
+      .from("subscriptions")
+      .update(payload)
+      .eq("id", existingByUser.id);
+
+    if (updateError) {
+      throw new Error(
+        `Failed to update subscription by user_id: ${updateError.message}`,
+      );
+    }
+
+    return;
+  }
+
+  const { error: insertError } = await supabase
+    .from("subscriptions")
+    .insert(payload);
+
+  if (insertError) {
+    throw new Error(`Failed to insert subscription: ${insertError.message}`);
+  }
 }
 
 // POST /api/subscriptions/checkout
@@ -176,81 +270,91 @@ router.post("/webhook", async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object as Stripe.Checkout.Session;
-    const userId = session.metadata?.user_id;
-    const plan = session.metadata?.plan;
-    const subscriptionId =
-      typeof session.subscription === "string"
-        ? session.subscription
-        : session.subscription?.id;
-    const customerId =
-      typeof session.customer === "string"
-        ? session.customer
-        : session.customer?.id;
+  try {
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const userId = session.metadata?.user_id;
+      const plan = session.metadata?.plan;
+      const subscriptionId =
+        typeof session.subscription === "string"
+          ? session.subscription
+          : session.subscription?.id;
+      const customerId =
+        typeof session.customer === "string"
+          ? session.customer
+          : session.customer?.id;
 
-    if (!userId || !plan || !subscriptionId || !customerId) {
-      res
-        .status(400)
-        .json({ error: "Webhook payload missing subscription metadata" });
-      return;
-    }
+      if (!userId || !plan || !subscriptionId || !customerId) {
+        res
+          .status(400)
+          .json({ error: "Webhook payload missing subscription metadata" });
+        return;
+      }
 
-    // Get subscription details from Stripe
-    const stripeSub = await stripe.subscriptions.retrieve(subscriptionId);
-    const renewsAt = getSubscriptionPeriodEnd(stripeSub);
+      const stripeSub = await stripe.subscriptions.retrieve(subscriptionId);
+      const renewsAt = getSubscriptionPeriodEnd(stripeSub);
 
-    if (!renewsAt) {
-      res
-        .status(400)
-        .json({
-          error: "Subscription period end missing from Stripe response",
-        });
-      return;
-    }
+      if (!renewsAt) {
+        res
+          .status(400)
+          .json({
+            error: "Subscription period end missing from Stripe response",
+          });
+        return;
+      }
 
-    // Upsert into our subscriptions table
-    await supabase.from("subscriptions").upsert(
-      {
-        user_id: userId,
+      await saveSubscriptionRecord({
+        userId,
         plan,
         status: mapStripeSubscriptionStatus(stripeSub.status),
-        stripe_customer_id: customerId,
-        stripe_subscription_id: subscriptionId,
-        renews_at: new Date(renewsAt * 1000).toISOString(),
-      },
-      { onConflict: "user_id" },
-    );
-  }
-
-  if (event.type === "customer.subscription.updated") {
-    const stripeSub = event.data.object as Stripe.Subscription;
-    await syncSubscriptionFromStripe(stripeSub);
-  }
-
-  if (event.type === "customer.subscription.deleted") {
-    const stripeSub = event.data.object as Stripe.Subscription;
-    await syncSubscriptionFromStripe(stripeSub);
-  }
-
-  if (event.type === "invoice.payment_failed") {
-    const invoice = event.data.object as Stripe.Invoice & {
-      subscription?: string | Stripe.Subscription | null;
-    };
-    const subscriptionId =
-      typeof invoice.subscription === "string"
-        ? invoice.subscription
-        : invoice.subscription?.id;
-
-    if (subscriptionId) {
-      await supabase
-        .from("subscriptions")
-        .update({ status: "lapsed" })
-        .eq("stripe_subscription_id", subscriptionId);
+        customerId,
+        subscriptionId,
+        renewsAt: new Date(renewsAt * 1000).toISOString(),
+      });
     }
-  }
 
-  res.json({ received: true });
+    if (event.type === "customer.subscription.updated") {
+      const stripeSub = event.data.object as Stripe.Subscription;
+      await syncSubscriptionFromStripe(stripeSub);
+    }
+
+    if (event.type === "customer.subscription.deleted") {
+      const stripeSub = event.data.object as Stripe.Subscription;
+      await syncSubscriptionFromStripe(stripeSub);
+    }
+
+    if (event.type === "invoice.payment_failed") {
+      const invoice = event.data.object as Stripe.Invoice & {
+        subscription?: string | Stripe.Subscription | null;
+      };
+      const subscriptionId =
+        typeof invoice.subscription === "string"
+          ? invoice.subscription
+          : invoice.subscription?.id;
+
+      if (subscriptionId) {
+        const { error } = await supabase
+          .from("subscriptions")
+          .update({ status: "lapsed" })
+          .eq("stripe_subscription_id", subscriptionId);
+
+        if (error) {
+          throw new Error(
+            `Failed to mark subscription as lapsed: ${error.message}`,
+          );
+        }
+      }
+    }
+
+    res.json({ received: true });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Webhook processing failed";
+    console.error(
+      `[subscriptions webhook] ${event.type} failed: ${message}`,
+    );
+    res.status(500).json({ error: message });
+  }
 });
 
 export default router;
