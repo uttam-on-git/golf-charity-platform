@@ -26,7 +26,7 @@ function isSubscriptionActive(subscription: UserSubscription | null | undefined)
   }
 
   if (!subscription.renews_at) {
-    return false;
+    return Boolean(subscription.stripe_subscription_id);
   }
 
   return new Date(subscription.renews_at).getTime() > Date.now();

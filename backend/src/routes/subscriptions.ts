@@ -187,13 +187,106 @@ router.post(
           user_id: req.user!.id,
           plan,
         },
-        success_url: `${process.env.FRONTEND_URL}/dashboard/subscription?success=true`,
+        success_url: `${process.env.FRONTEND_URL}/dashboard/subscription?success=true&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.FRONTEND_URL}/dashboard/subscription?cancelled=true`,
       });
 
       res.json({ success: true, url: session.url });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Stripe error";
+      res.status(500).json({ success: false, error: message });
+    }
+  },
+);
+
+// POST /api/subscriptions/confirm-session
+// Fallback sync when checkout succeeded but webhook has not updated the DB yet
+router.post(
+  "/confirm-session",
+  authenticate,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    const { session_id } = req.body;
+
+    if (!session_id || typeof session_id !== "string") {
+      res.status(400).json({ success: false, error: "session_id is required" });
+      return;
+    }
+
+    try {
+      const session = await stripe.checkout.sessions.retrieve(session_id, {
+        expand: ["subscription"],
+      });
+
+      if (session.metadata?.user_id !== req.user!.id) {
+        res.status(403).json({ success: false, error: "Session does not belong to this user" });
+        return;
+      }
+
+      const plan = session.metadata?.plan;
+      const subscriptionId =
+        typeof session.subscription === "string"
+          ? session.subscription
+          : session.subscription?.id;
+      const customerId =
+        typeof session.customer === "string"
+          ? session.customer
+          : session.customer?.id;
+
+      if (!plan || !subscriptionId || !customerId) {
+        res.status(400).json({
+          success: false,
+          error: "Checkout session is missing subscription details",
+        });
+        return;
+      }
+
+      const stripeSub =
+        typeof session.subscription === "string"
+          ? await stripe.subscriptions.retrieve(session.subscription)
+          : session.subscription;
+
+      if (!stripeSub) {
+        res.status(400).json({
+          success: false,
+          error: "Checkout session does not contain a subscription",
+        });
+        return;
+      }
+
+      const renewsAt = getSubscriptionPeriodEnd(stripeSub);
+
+      if (!renewsAt) {
+        res.status(400).json({
+          success: false,
+          error: "Subscription period end missing from Stripe response",
+        });
+        return;
+      }
+
+      await saveSubscriptionRecord({
+        userId: req.user!.id,
+        plan,
+        status: mapStripeSubscriptionStatus(stripeSub.status),
+        customerId,
+        subscriptionId,
+        renewsAt: new Date(renewsAt * 1000).toISOString(),
+      });
+
+      const { data: subscription, error } = await supabase
+        .from("subscriptions")
+        .select("*")
+        .eq("user_id", req.user!.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        throw new Error(`Failed to load synced subscription: ${error.message}`);
+      }
+
+      res.json({ success: true, data: subscription ?? null });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to confirm checkout session";
       res.status(500).json({ success: false, error: message });
     }
   },

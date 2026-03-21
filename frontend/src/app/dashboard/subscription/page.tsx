@@ -31,6 +31,7 @@ export default function SubscriptionPage() {
 
   const success = searchParams.get('success');
   const cancelled = searchParams.get('cancelled');
+  const sessionId = searchParams.get('session_id');
 
   useEffect(() => {
     void fetchSub();
@@ -42,6 +43,22 @@ export default function SubscriptionPage() {
     let stopped = false;
 
     const pollSubscription = async () => {
+      if (sessionId) {
+        try {
+          const res = await api.post('/subscriptions/confirm-session', {
+            session_id: sessionId,
+          });
+
+          if (res.data?.data) {
+            setSub(res.data.data as Subscription);
+            setLoading(false);
+            return;
+          }
+        } catch {
+          // Fall back to polling /subscriptions/me in case webhook wins the race.
+        }
+      }
+
       for (let attempt = 0; attempt < 4; attempt += 1) {
         const found = await fetchSub(attempt === 0);
         if (found || stopped) return;
@@ -54,7 +71,7 @@ export default function SubscriptionPage() {
     return () => {
       stopped = true;
     };
-  }, [success]);
+  }, [sessionId, success]);
 
   const fetchSub = async (skipLoading = false) => {
     if (!skipLoading) setLoading(true);
