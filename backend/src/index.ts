@@ -8,6 +8,7 @@ import authRoutes from './routes/auth.js';
 import scoreRoutes from './routes/scores.js';
 import charityRoutes from './routes/charities.js';
 import subscriptionRoutes from './routes/subscriptions.js';
+import drawRoutes from './routes/draws.js';
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/scores', scoreRoutes);
 app.use('/api/charities', charityRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/draws', drawRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
