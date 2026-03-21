@@ -1,13 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+
+import { SectionCard, StatCard } from '@/components/dashboard/overview-primitives';
 import api from '@/lib/axios';
 
 interface Subscription {
   plan: string;
   status: string;
   renews_at: string;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return 'TBD';
+  return new Date(value).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
 export default function SubscriptionPage() {
@@ -25,21 +36,14 @@ export default function SubscriptionPage() {
   }, []);
 
   useEffect(() => {
-    if (!success) {
-      return;
-    }
+    if (!success) return;
 
     let stopped = false;
 
     const pollSubscription = async () => {
-      const attempts = 4;
-
-      for (let attempt = 0; attempt < attempts; attempt += 1) {
-        const foundSubscription = await fetchSub(attempt === 0);
-        if (foundSubscription || stopped) {
-          return;
-        }
-
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const found = await fetchSub(attempt === 0);
+        if (found || stopped) return;
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
     };
@@ -52,9 +56,7 @@ export default function SubscriptionPage() {
   }, [success]);
 
   const fetchSub = async (skipLoading = false) => {
-    if (!skipLoading) {
-      setLoading(true);
-    }
+    if (!skipLoading) setLoading(true);
 
     try {
       const res = await api.get('/subscriptions/me');
@@ -98,78 +100,148 @@ export default function SubscriptionPage() {
     }
   };
 
+  const planLabel = useMemo(() => {
+    if (!sub?.plan) return 'None';
+    return sub.plan.charAt(0).toUpperCase() + sub.plan.slice(1);
+  }, [sub]);
+
   if (loading) {
-    return <p className="text-gray-500 animate-pulse text-sm">Loading...</p>;
+    return <p className="text-zinc-500 animate-pulse text-sm">Loading subscription details...</p>;
   }
 
   return (
-    <div className="max-w-xl">
-      <h1 className="text-2xl font-bold text-white mb-1">Subscription</h1>
-      <p className="text-gray-400 text-sm mb-8">Manage your plan</p>
+    <div>
+      <header className="mb-8">
+        <h1 className="text-2xl md:text-3xl font-semibold text-zinc-100 tracking-tight">Subscription</h1>
+        <p className="text-zinc-500 mt-1.5 text-sm md:text-base">
+          Manage your membership plan, renewal timing, and billing status.
+        </p>
+      </header>
 
-      {success && (
-        <div className="bg-green-500/10 border border-green-500/30 text-green-400 text-sm rounded-lg p-3 mb-6">
+      {success ? (
+        <div className="bg-[#10b981]/10 border border-[#10b981]/20 text-[#8ef0c6] text-sm rounded-xl px-4 py-3 mb-6">
           Subscription activated. Welcome aboard.
         </div>
-      )}
-      {cancelled && (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-sm rounded-lg p-3 mb-6">
-          Checkout cancelled. No charges made.
+      ) : null}
+      {cancelled ? (
+        <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-200 text-sm rounded-xl px-4 py-3 mb-6">
+          Checkout cancelled. No charges were made.
         </div>
-      )}
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3 mb-6">
+      ) : null}
+      {error ? (
+        <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-sm rounded-xl px-4 py-3 mb-6">
           {error}
         </div>
-      )}
+      ) : null}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6 mb-8 md:mb-10">
+        <StatCard
+          label="Current Plan"
+          value={planLabel}
+          suffix={sub ? 'Stripe-backed membership' : 'Choose a plan'}
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect width="20" height="14" x="2" y="5" rx="2" />
+              <line x1="2" x2="22" y1="10" y2="10" />
+            </svg>
+          }
+        />
+        <StatCard
+          label="Status"
+          value={sub?.status ? sub.status.charAt(0).toUpperCase() + sub.status.slice(1) : 'Inactive'}
+          suffix={sub?.status === 'active' ? 'All benefits enabled' : 'No active billing'}
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 2v20" />
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+            </svg>
+          }
+        />
+        <StatCard
+          label="Renews On"
+          value={sub?.renews_at ? formatDate(sub.renews_at) : 'Not scheduled'}
+          suffix={sub?.status === 'cancelled' ? 'Ends at period close' : 'Next billing cycle'}
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="18" rx="2" />
+              <path d="M16 2v4" />
+              <path d="M8 2v4" />
+              <path d="M3 10h18" />
+            </svg>
+          }
+        />
+      </div>
 
       {sub && sub.status === 'active' ? (
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-white font-semibold capitalize">{sub.plan} Plan</p>
-              <p className="text-gray-500 text-xs mt-1">
-                Renews {new Date(sub.renews_at).toLocaleDateString('en-GB', {
-                  day: 'numeric', month: 'long', year: 'numeric'
-                })}
+        <SectionCard
+          title="Active Membership"
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#10b981]" aria-hidden="true">
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+          }
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-6 items-center">
+            <div className="rounded-2xl bg-[#0a0a0a] border border-[#1e1e1e] p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium mb-2">Membership Summary</p>
+              <h3 className="text-2xl font-semibold text-zinc-100 mb-2">{planLabel} Plan</h3>
+              <p className="text-sm text-zinc-400 leading-relaxed mb-4">
+                Your subscription is active and your dashboard benefits remain unlocked, including score submissions, charity selection, and draw participation.
               </p>
+              <div className="flex flex-wrap gap-2">
+                <span className="text-[11px] px-2 py-1 rounded-full bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/20">Active</span>
+                <span className="text-[11px] px-2 py-1 rounded-full bg-[#141414] text-zinc-300 border border-[#2a2a2a]">Renews {formatDate(sub.renews_at)}</span>
+              </div>
             </div>
-            <span className="text-xs bg-green-500/10 text-green-400 px-3 py-1 rounded-full">
-              Active
-            </span>
-          </div>
-          <button
-            onClick={handleCancel}
-            className="text-sm text-red-400 hover:text-red-300 transition"
-          >
-            Cancel subscription
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {[
-            { plan: 'monthly', label: 'Monthly', price: 'GBP 9.99/mo', note: 'Billed monthly' },
-            { plan: 'yearly', label: 'Yearly', price: 'GBP 99.99/yr', note: 'Save ~17%' },
-          ].map((p) => (
-            <div
-              key={p.plan}
-              className="bg-gray-900 border border-gray-800 rounded-2xl p-6 flex items-center justify-between"
+            <button
+              onClick={handleCancel}
+              className="text-sm font-medium text-red-300 hover:text-white transition-colors bg-[#1e1e1e] hover:bg-[#2a2a2a] border border-transparent hover:border-[#3f3f46] px-4 py-2.5 rounded-lg"
             >
-              <div>
-                <p className="text-white font-semibold">{p.label}</p>
-                <p className="text-gray-500 text-xs mt-1">{p.note}</p>
+              Cancel subscription
+            </button>
+          </div>
+        </SectionCard>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          {[
+            {
+              plan: 'monthly',
+              label: 'Monthly',
+              price: 'GBP 9.99/mo',
+              note: 'Flexible entry, billed every month.',
+              accent: false,
+            },
+            {
+              plan: 'yearly',
+              label: 'Yearly',
+              price: 'GBP 99.99/yr',
+              note: 'Best value, roughly 17% saved annually.',
+              accent: true,
+            },
+          ].map((item) => (
+            <SectionCard
+              key={item.plan}
+              title={item.label}
+              icon={
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={item.accent ? 'text-[#10b981]' : 'text-zinc-400'} aria-hidden="true">
+                  <rect width="20" height="14" x="2" y="5" rx="2" />
+                  <line x1="2" x2="22" y1="10" y2="10" />
+                </svg>
+              }
+              className={item.accent ? 'border-[#10b981]/40 shadow-[0_0_20px_rgba(16,185,129,0.08)]' : undefined}
+            >
+              <div className="rounded-2xl bg-[#0a0a0a] border border-[#1e1e1e] p-5 mb-5">
+                <p className="text-3xl font-semibold text-zinc-100 tracking-tight">{item.price}</p>
+                <p className="text-sm text-zinc-500 mt-2">{item.note}</p>
               </div>
-              <div className="text-right">
-                <p className="text-green-400 font-bold mb-2">{p.price}</p>
-                <button
-                  onClick={() => handleSubscribe(p.plan)}
-                  disabled={!!checkoutLoading}
-                  className="bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black text-sm font-semibold px-4 py-2 rounded-lg transition"
-                >
-                  {checkoutLoading === p.plan ? 'Redirecting...' : 'Subscribe'}
-                </button>
-              </div>
-            </div>
+              <button
+                onClick={() => handleSubscribe(item.plan)}
+                disabled={!!checkoutLoading}
+                className={`w-full rounded-xl py-3 text-sm font-semibold transition-all ${item.accent ? 'bg-[#10b981] hover:bg-[#0fb172] text-[#0a0a0a]' : 'bg-[#1e1e1e] hover:bg-[#2a2a2a] text-zinc-100'} disabled:opacity-50`}
+              >
+                {checkoutLoading === item.plan ? 'Redirecting...' : `Choose ${item.label}`}
+              </button>
+            </SectionCard>
           ))}
         </div>
       )}

@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 import { useEffect } from 'react';
-import { Inter } from 'next/font/google';
 
+import Logo from '@/components/Logo';
 import {
   ArrowRightIcon,
   CardIcon,
@@ -17,10 +17,6 @@ import {
   StatsItem,
   StepCard,
 } from './landing-primitives';
-
-const inter = Inter({
-  subsets: ['latin'],
-});
 
 export default function GolfCharityLanding() {
   useEffect(() => {
@@ -62,15 +58,13 @@ export default function GolfCharityLanding() {
   }, []);
 
   return (
-    <div className={`${inter.className} relative min-h-screen overflow-x-hidden bg-[#0a0a0a] text-white selection:bg-emerald-500/30 selection:text-white`}>
+    <div className="relative min-h-screen overflow-x-hidden bg-[#0a0a0a] text-white selection:bg-emerald-500/30 selection:text-white">
       <div className="grain-overlay" />
 
       <nav className="sticky top-0 z-40 w-full border-b border-(--gc-border) bg-[rgba(10,10,10,0.8)] backdrop-blur-xl transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-6 h-6 rounded bg-emerald-500 flex items-center justify-center transition-colors group-hover:bg-emerald-400">
-              <CheckIcon className="size-3 text-[#0a0a0a]" />
-            </div>
+            <Logo size={36} />
             <span className="font-bold text-lg tracking-tight">GolfCharity</span>
           </Link>
 
@@ -342,9 +336,7 @@ export default function GolfCharityLanding() {
       <footer className="bg-[#0a0a0a] py-10 px-6 mt-auto">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-2 opacity-80 hover:opacity-100 transition-opacity">
-            <div className="w-6 h-6 rounded bg-emerald-500 flex items-center justify-center">
-              <CheckIcon className="size-3 text-[#0a0a0a]" />
-            </div>
+            <Logo size={28} />
             <span className="font-bold text-white tracking-tight">GolfCharity</span>
           </div>
 

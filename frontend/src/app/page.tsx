@@ -1,6 +1,11 @@
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 
 import GolfCharityLanding from '@/components/landing/GolfCharityLanding';
+
+const inter = Inter({
+  subsets: ['latin'],
+});
 
 export const metadata: Metadata = {
   title: 'GolfCharity | The Modern Draw',
@@ -9,5 +14,9 @@ export const metadata: Metadata = {
 };
 
 export default function HomePage() {
-  return <GolfCharityLanding />;
+  return (
+    <div className={inter.className}>
+      <GolfCharityLanding />
+    </div>
+  );
 }
