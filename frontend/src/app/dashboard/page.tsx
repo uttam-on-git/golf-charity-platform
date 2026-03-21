@@ -1,20 +1,190 @@
 'use client';
 
-import Image from 'next/image';
 import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
 
 import { ScoreItem, SectionCard, StatCard } from '@/components/dashboard/overview-primitives';
+import { DashboardPageLoader } from '@/components/loading/LoadingUI';
 import { useAuth } from '@/context/AuthContext';
+import api from '@/lib/axios';
 
-const recentScores = [
-  { score: '82', course: 'Wentworth Club', date: '24 Oct 2023', delta: '+10' },
-  { score: '79', course: 'Sunningdale (Old)', date: '12 Oct 2023', delta: '+7' },
-  { score: '85', course: "Royal St George's", date: '28 Sep 2023', delta: '+13' },
-];
+interface Score {
+  id: string;
+  score: number;
+  played_at: string;
+}
+
+interface Draw {
+  id: string;
+  month: string;
+  status: string;
+  winning_numbers: number[];
+  jackpot_rolled_over: boolean;
+}
+
+interface Winning {
+  id: string;
+  match_type: string;
+  prize_amount: number;
+  payment_status: string;
+}
+
+interface Subscription {
+  plan: string;
+  status: string;
+  renews_at: string;
+}
+
+interface Charity {
+  id: string;
+  name: string;
+  description: string;
+  is_featured: boolean;
+}
+
+interface ProfileResponse {
+  charity_id?: string | number | null;
+  charities?: { name?: string | null } | null;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return 'TBD';
+  return new Date(value).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function formatMonth(value?: string | null) {
+  if (!value) return 'TBD';
+  return new Date(`${value}-01`).toLocaleDateString('en-GB', {
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+function formatStatus(status?: string | null) {
+  if (!status) return 'Inactive';
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function getInitials(name?: string | null) {
+  if (!name) return 'GC';
+
+  return (
+    name
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? '')
+      .join('') || 'GC'
+  );
+}
+
+function resolveSelectedCharity(
+  charities: Charity[],
+  charityId?: string | number | null,
+  charityName?: string | null,
+) {
+  const byId = charities.find((charity) => String(charity.id) === String(charityId));
+  if (byId) return byId;
+
+  if (charityName) {
+    return charities.find((charity) => charity.name === charityName) ?? null;
+  }
+
+  return null;
+}
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const userName = user?.email?.split('@')[0] ?? 'john.doe';
+  const [scores, setScores] = useState<Score[]>([]);
+  const [draws, setDraws] = useState<Draw[]>([]);
+  const [winnings, setWinnings] = useState<Winning[]>([]);
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [selectedCharity, setSelectedCharity] = useState<Charity | null>(null);
+  const [profileCharityName, setProfileCharityName] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchOverview = async () => {
+      setLoading(true);
+      setError('');
+
+      try {
+        const [scoresRes, drawsRes, winningsRes, subscriptionRes, profileRes] = await Promise.all([
+          api.get('/scores'),
+          api.get('/draws'),
+          api.get('/draws/me/winnings'),
+          api.get('/subscriptions/me'),
+          api.get('/auth/me'),
+        ]);
+
+        const nextScores = Array.isArray(scoresRes.data?.data) ? scoresRes.data.data : [];
+        const nextDraws = Array.isArray(drawsRes.data?.data) ? drawsRes.data.data : [];
+        const nextWinnings = Array.isArray(winningsRes.data?.data) ? winningsRes.data.data : [];
+        const nextSubscription = (subscriptionRes.data?.data as Subscription | null) ?? null;
+        const profile = (profileRes.data?.data as ProfileResponse | null) ?? null;
+        const currentCharityId = profile?.charity_id ?? user?.charity_id;
+        let currentCharity: Charity | null = null;
+
+        if (currentCharityId) {
+          try {
+            const charityRes = await api.get(`/charities/${currentCharityId}`);
+            currentCharity = (charityRes.data?.data as Charity | null) ?? null;
+          } catch {
+            currentCharity = null;
+          }
+        }
+
+        setScores(nextScores);
+        setDraws(nextDraws);
+        setWinnings(nextWinnings);
+        setSubscription(nextSubscription);
+        setProfileCharityName(profile?.charities?.name ?? null);
+        setSelectedCharity(
+          currentCharity ??
+            resolveSelectedCharity([], currentCharityId, profile?.charities?.name ?? null),
+        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load dashboard overview');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void fetchOverview();
+  }, [user?.charity_id]);
+
+  const userName =
+    user?.full_name?.trim() ||
+    user?.email?.split('@')[0] ||
+    'Member';
+
+  const totalWinnings = useMemo(
+    () => winnings.reduce((sum, item) => sum + (item.prize_amount || 0), 0),
+    [winnings],
+  );
+
+  const nextDraw = useMemo(
+    () => draws.find((draw) => draw.status === 'draft') ?? draws[0] ?? null,
+    [draws],
+  );
+
+  const recentScores = scores.slice(0, 3);
+  const activeStatus = subscription?.status === 'active';
+  const contributionRate = selectedCharity ? '10%' : 'Not set';
+  const paidWinningsCount = winnings.filter((item) => item.payment_status === 'paid').length;
+
+  if (loading) {
+    return (
+      <DashboardPageLoader
+        title="Loading your overview"
+        subtitle="Pulling your membership, scores, draws, and charity impact into one place."
+      />
+    );
+  }
 
   return (
     <div>
@@ -23,22 +193,28 @@ export default function DashboardPage() {
           Welcome back, {userName}
         </h1>
         <p className="text-zinc-500 mt-1.5 text-sm md:text-base">
-          Here&apos;s your latest subscription overview and draw status.
+          Here&apos;s your live subscription overview, draw status, and latest activity.
         </p>
       </header>
+
+      {error ? (
+        <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-sm rounded-xl px-4 py-3 mb-6">
+          {error}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-8 md:mb-10">
         <StatCard
           label="Subscription Status"
-          value="Active"
+          value={formatStatus(subscription?.status)}
           accent={
             <div className="flex items-center gap-3">
               <div className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#10b981] opacity-40" />
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
+                <span className={`absolute inline-flex h-full w-full rounded-full ${activeStatus ? 'animate-ping bg-[#10b981] opacity-40' : 'bg-zinc-500/40'}`} />
+                <span className={`relative inline-flex rounded-full h-3 w-3 ${activeStatus ? 'bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-zinc-500'}`} />
               </div>
               <span className="text-2xl md:text-3xl font-semibold text-zinc-100 tracking-tight">
-                Active
+                {formatStatus(subscription?.status)}
               </span>
             </div>
           }
@@ -51,8 +227,8 @@ export default function DashboardPage() {
         />
         <StatCard
           label="Draws Entered"
-          value="24"
-          suffix="tickets"
+          value={String(draws.length)}
+          suffix={nextDraw ? `Latest ${formatMonth(nextDraw.month)}` : 'No draws yet'}
           icon={
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
@@ -61,7 +237,8 @@ export default function DashboardPage() {
         />
         <StatCard
           label="Total Winnings"
-          value="0.00"
+          value={totalWinnings.toFixed(2)}
+          suffix={paidWinningsCount ? `${paidWinningsCount} paid out` : 'No paid wins yet'}
           className="sm:col-span-2 lg:col-span-1"
           icon={
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -85,39 +262,42 @@ export default function DashboardPage() {
                   <circle cx="12" cy="12" r="10" />
                   <polyline points="12 6 12 12 16 14" />
                 </svg>
-                Next Major Draw
+                Latest Draw Snapshot
               </h2>
               <span className="text-[10px] md:text-xs font-semibold px-2.5 py-1 bg-[#1e1e1e] text-zinc-300 rounded-md tracking-wider uppercase border border-[#2a2a2a]">
-                Nov Edition
+                {nextDraw ? formatMonth(nextDraw.month) : 'No draws'}
               </span>
             </div>
 
-            <div className="flex items-center justify-center gap-4 sm:gap-8 pb-4">
-              <div className="flex flex-col items-center">
-                <div className="bg-[#0a0a0a] border border-[#1e1e1e] rounded-xl w-16 h-20 sm:w-20 sm:h-24 flex items-center justify-center mb-2 shadow-inner">
-                  <span className="text-3xl sm:text-5xl font-semibold text-zinc-100 font-mono tracking-tighter">14</span>
+            {nextDraw ? (
+              <>
+                <div className="flex gap-3 flex-wrap justify-center pb-4">
+                  {(nextDraw.winning_numbers?.length ? nextDraw.winning_numbers : ['-', '-', '-', '-', '-']).map((value, index) => (
+                    <div key={`${value}-${index}`} className="bg-[#0a0a0a] border border-[#1e1e1e] rounded-xl w-16 h-20 sm:w-20 sm:h-24 flex items-center justify-center shadow-inner">
+                      <span className="text-3xl sm:text-5xl font-semibold text-zinc-100 font-mono tracking-tighter">
+                        {value}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-                <span className="text-[10px] sm:text-xs text-zinc-500 uppercase tracking-widest font-medium">Days</span>
-              </div>
-
-              <span className="text-2xl sm:text-4xl text-[#2a2a2a] -mt-6 font-mono">:</span>
-
-              <div className="flex flex-col items-center">
-                <div className="bg-[#0a0a0a] border border-[#1e1e1e] rounded-xl w-16 h-20 sm:w-20 sm:h-24 flex items-center justify-center mb-2 shadow-inner">
-                  <span className="text-3xl sm:text-5xl font-semibold text-zinc-100 font-mono tracking-tighter">08</span>
+                <div className="flex items-center justify-between gap-4 pt-2 border-t border-[#1e1e1e]">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium mb-1">Status</p>
+                    <p className="text-sm text-zinc-100 font-medium capitalize">{nextDraw.status}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium mb-1">Jackpot</p>
+                    <p className="text-sm text-zinc-100 font-medium">
+                      {nextDraw.jackpot_rolled_over ? 'Rolled over' : 'Settled'}
+                    </p>
+                  </div>
                 </div>
-                <span className="text-[10px] sm:text-xs text-zinc-500 uppercase tracking-widest font-medium">Hours</span>
+              </>
+            ) : (
+              <div className="bg-[#0a0a0a] border border-dashed border-[#2a2a2a] rounded-xl px-5 py-8 text-center text-sm text-zinc-500">
+                No draw activity yet. Your latest draw information will appear here once the first draw is available.
               </div>
-
-              <span className="text-2xl sm:text-4xl text-[#2a2a2a] -mt-6 font-mono hidden sm:block">:</span>
-
-              <div className="hidden sm:flex flex-col items-center">
-                <div className="bg-[#0a0a0a] border border-[#1e1e1e] rounded-xl w-20 h-24 flex items-center justify-center mb-2 shadow-inner">
-                  <span className="text-5xl font-semibold text-zinc-100 font-mono tracking-tighter">45</span>
-                </div>
-                <span className="text-xs text-zinc-500 uppercase tracking-widest font-medium">Mins</span>
-              </div>
-            </div>
+            )}
           </section>
 
           <SectionCard
@@ -140,11 +320,23 @@ export default function DashboardPage() {
               </Link>
             }
           >
-            <div className="flex flex-col gap-3">
-              {recentScores.map((score) => (
-                <ScoreItem key={`${score.course}-${score.date}`} {...score} />
-              ))}
-            </div>
+            {recentScores.length === 0 ? (
+              <div className="bg-[#0a0a0a] border border-dashed border-[#2a2a2a] rounded-xl px-5 py-8 text-center text-sm text-zinc-500">
+                No scores submitted yet. Add your first round to start building your draw numbers.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {recentScores.map((score) => (
+                  <ScoreItem
+                    key={score.id}
+                    score={String(score.score)}
+                    course="Stableford round"
+                    date={formatDate(score.played_at)}
+                    delta={`${score.score} pts`}
+                  />
+                ))}
+              </div>
+            )}
           </SectionCard>
         </div>
 
@@ -159,48 +351,58 @@ export default function DashboardPage() {
               </h2>
               <div className="flex items-center gap-1.5 bg-[#10b981]/10 px-2.5 py-1 rounded-full border border-[#10b981]/20">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#10b981]" />
-                <span className="text-[10px] md:text-xs font-medium text-[#10b981]">5% Contribution</span>
+                <span className="text-[10px] md:text-xs font-medium text-[#10b981]">{contributionRate} Contribution</span>
               </div>
             </div>
 
             <div className="p-6 flex-1 flex flex-col">
-              <div className="w-full h-48 md:h-56 bg-[#1e1e1e] rounded-xl mb-6 overflow-hidden relative border border-[#2a2a2a] group">
-                <Image
-                  src="https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&q=80&w=1200&h=800"
-                  alt="Golf Charity Initiative"
-                  fill
-                  sizes="(max-width: 1024px) 100vw, 50vw"
-                  className="w-full h-full object-cover opacity-70 group-hover:opacity-90 group-hover:scale-105 transition-all duration-700 ease-in-out mix-blend-luminosity group-hover:mix-blend-normal"
-                />
-                <div className="absolute inset-0 bg-linear-to-t from-[#0a0a0a] via-[#0a0a0a]/40 to-transparent" />
+              <div className="w-full rounded-xl bg-linear-to-br from-[#1a1a1a] via-[#101010] to-[#0a0a0a] border border-[#2a2a2a] p-5 mb-6 overflow-hidden relative">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.15),transparent_45%)]" />
 
-                <div className="absolute bottom-5 left-5 right-5 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-white p-1.5 shadow-xl shrink-0">
-                    <div className="w-full h-full bg-[#1e1e1e] rounded flex items-center justify-center">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="size-4" aria-hidden="true">
-                        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                      </svg>
-                    </div>
+                <div className="relative z-10 flex items-center gap-3 mb-5">
+                  <div className="w-12 h-12 rounded-xl bg-white/95 text-[#0a0a0a] flex items-center justify-center font-bold shadow-lg shrink-0">
+                    {getInitials(selectedCharity?.name ?? profileCharityName)}
                   </div>
                   <div>
-                    <h3 className="font-semibold text-white text-lg shadow-sm leading-tight">The Golf Foundation</h3>
-                    <p className="text-xs text-zinc-300">Supporting youth in sports</p>
+                    <h3 className="font-semibold text-white text-lg shadow-sm leading-tight">
+                      {selectedCharity?.name ?? profileCharityName ?? 'No charity selected'}
+                    </h3>
+                    <p className="text-xs text-zinc-300">
+                      {selectedCharity?.is_featured ? 'Featured charity partner' : 'Linked to your account'}
+                    </p>
                   </div>
+                </div>
+
+                <p className="relative z-10 text-sm text-zinc-300 leading-relaxed">
+                  {selectedCharity?.description ??
+                    'Choose a charity to connect your subscription with a cause and see it reflected across your dashboard.'}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] p-4">
+                  <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider block mb-1">Current Plan</span>
+                  <span className="text-lg font-semibold text-zinc-100">
+                    {subscription?.plan ? formatStatus(subscription.plan) : 'No plan'}
+                  </span>
+                </div>
+                <div className="rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] p-4">
+                  <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider block mb-1">Renews On</span>
+                  <span className="text-lg font-semibold text-zinc-100">{formatDate(subscription?.renews_at)}</span>
                 </div>
               </div>
 
-              <p className="text-sm text-zinc-400 leading-relaxed mb-6">
-                Your monthly subscription actively supports The Golf Foundation. By choosing this charity, you&apos;re helping introduce young people from all backgrounds to the sport, teaching them valuable life skills and providing access to coaching facilities across the country.
-              </p>
-
-              <div className="mt-auto pt-5 border-t border-[#1e1e1e] flex items-center justify-between">
+              <div className="mt-auto pt-5 border-t border-[#1e1e1e] flex items-center justify-between gap-4">
                 <div className="flex flex-col">
-                  <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-0.5">Total Contributed</span>
-                  <span className="text-xl font-semibold text-zinc-100">45.00</span>
+                  <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-0.5">Winning Entries</span>
+                  <span className="text-xl font-semibold text-zinc-100">{winnings.length}</span>
                 </div>
-                <button className="text-sm font-medium text-zinc-300 hover:text-white transition-colors bg-[#1e1e1e] hover:bg-[#2a2a2a] border border-transparent hover:border-[#3f3f46] px-4 py-2 rounded-lg">
+                <Link
+                  href="/dashboard/charity"
+                  className="text-sm font-medium text-zinc-300 hover:text-white transition-colors bg-[#1e1e1e] hover:bg-[#2a2a2a] border border-transparent hover:border-[#3f3f46] px-4 py-2 rounded-lg"
+                >
                   Manage Charity
-                </button>
+                </Link>
               </div>
             </div>
           </section>
