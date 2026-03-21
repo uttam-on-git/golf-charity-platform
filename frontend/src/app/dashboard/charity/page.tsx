@@ -12,14 +12,8 @@ interface Charity {
   is_featured: boolean;
 }
 
-interface Profile {
-  charity_id: string | null;
-  charity_contribution_percent: number;
-}
-
 export default function CharityPage() {
   const [charities, setCharities] = useState<Charity[]>([]);
-  const [profile, setProfile] = useState<Profile | null>(null);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string>('');
   const [percent, setPercent] = useState(10);
@@ -37,7 +31,6 @@ export default function CharityPage() {
     ]);
     setCharities(charitiesRes.data.data);
     const p = profileRes.data.data;
-    setProfile(p);
     if (p.charity_id) setSelected(p.charity_id);
     if (p.charity_contribution_percent) setPercent(p.charity_contribution_percent);
   };

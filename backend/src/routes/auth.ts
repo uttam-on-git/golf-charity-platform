@@ -41,12 +41,21 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('full_name, role, charity_id')
+    .eq('id', data.user.id)
+    .maybeSingle();
+
   res.json({
     success: true,
     token: data.session.access_token,
     user: {
       id: data.user.id,
       email: data.user.email,
+      full_name: profile?.full_name ?? null,
+      role: profile?.role ?? 'subscriber',
+      charity_id: profile?.charity_id ?? null,
     },
   });
 });
@@ -57,9 +66,21 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
     .from('profiles')
     .select('*, charities(name)')
     .eq('id', req.user!.id)
-    .single();
+    .maybeSingle();
 
-  res.json({ success: true, data: profile });
+  res.json({
+    success: true,
+    data: {
+      id: req.user!.id,
+      email: req.user!.email,
+      role: req.user!.role,
+      full_name: profile?.full_name ?? null,
+      charity_id: profile?.charity_id ?? null,
+      charities: profile?.charities ?? null,
+      created_at: profile?.created_at ?? null,
+      updated_at: profile?.updated_at ?? null,
+    },
+  });
 });
 
 export default router;

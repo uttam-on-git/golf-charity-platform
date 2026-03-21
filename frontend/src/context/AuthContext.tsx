@@ -6,12 +6,15 @@ import api from '@/lib/axios';
 interface User {
   id: string;
   email: string;
+  role: string;
+  full_name?: string | null;
+  charity_id?: string | null;
 }
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
   register: (email: string, password: string, full_name: string) => Promise<void>;
   logout: () => void;
   loading: boolean;
@@ -42,6 +45,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(res.data.data);
     } catch {
       localStorage.removeItem('token');
+      setToken(null);
+      setUser(null);
     } finally {
       setLoading(false);
     }
@@ -53,6 +58,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     localStorage.setItem('token', token);
     setToken(token);
     setUser(user);
+    return user;
   };
 
   const register = async (email: string, password: string, full_name: string) => {

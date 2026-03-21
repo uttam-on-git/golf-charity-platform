@@ -9,6 +9,7 @@ import scoreRoutes from './routes/scores.js';
 import charityRoutes from './routes/charities.js';
 import subscriptionRoutes from './routes/subscriptions.js';
 import drawRoutes from './routes/draws.js';
+import adminRoutes from './routes/admin.js';
 
 dotenv.config();
 
@@ -34,6 +35,7 @@ app.use('/api/scores', scoreRoutes);
 app.use('/api/charities', charityRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/draws', drawRoutes);
+app.use('/api/admin', adminRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
