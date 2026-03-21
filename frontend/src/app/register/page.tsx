@@ -42,10 +42,8 @@ export default function RegisterPage() {
         <div className="hidden lg:flex flex-1 flex-col justify-between p-12 xl:p-20 border-r border-white/[0.04] bg-[#0a0a0b]/60 backdrop-blur-sm">
           <div>
             <div className="flex items-center gap-3 mb-10">
-              <div className="w-11 h-11 rounded-lg bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)]">
-                <Logo size={28} />
-              </div>
-              <span className="text-xl font-semibold tracking-tight">GolfCharity</span>
+              <Logo size={32} />
+              <span className="text-xl font-semibold">GolfCharity</span>
             </div>
 
             <h1 className="text-4xl xl:text-5xl font-bold tracking-tight leading-[1.15] mb-6">
@@ -112,9 +110,6 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          <div className="text-xs text-zinc-500 font-medium tracking-wide">
-            2024 GolfCharity. All rights reserved.
-          </div>
         </div>
 
         <div className="flex-1 flex items-center justify-center px-6 py-10 lg:px-14">

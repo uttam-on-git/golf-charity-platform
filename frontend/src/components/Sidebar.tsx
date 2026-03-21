@@ -109,7 +109,7 @@ export default function Sidebar() {
         <div className="h-20 flex items-center px-6 border-b border-[#1e1e1e]">
           <Link
             href="/dashboard"
-            className="flex items-center gap-2.5 text-[#10b981] font-semibold text-lg tracking-tight hover:opacity-90 transition-opacity"
+            className="flex items-center gap-2.5 text-zinc-100 font-semibold text-lg tracking-tight hover:opacity-90 transition-opacity"
           >
             <Logo size={32} className="drop-shadow-[0_0_15px_rgba(16,185,129,0.2)]" />
             <span>GolfCharity</span>
