@@ -64,21 +64,31 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   const { data: profile } = await supabase
     .from('profiles')
-    .select('*, charities(name)')
+    .select('full_name, role, charity_id')
     .eq('id', req.user!.id)
     .maybeSingle();
+
+  let charity: { id: string; name: string } | null = null;
+
+  if (profile?.charity_id) {
+    const { data: charityRecord } = await supabase
+      .from('charities')
+      .select('id, name')
+      .eq('id', profile.charity_id)
+      .maybeSingle();
+
+    charity = charityRecord ?? null;
+  }
 
   res.json({
     success: true,
     data: {
       id: req.user!.id,
       email: req.user!.email,
-      role: req.user!.role,
+      role: profile?.role ?? req.user!.role,
       full_name: profile?.full_name ?? null,
       charity_id: profile?.charity_id ?? null,
-      charities: profile?.charities ?? null,
-      created_at: profile?.created_at ?? null,
-      updated_at: profile?.updated_at ?? null,
+      charities: charity,
     },
   });
 });

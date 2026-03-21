@@ -84,20 +84,34 @@ router.put(
       return;
     }
 
-    const { error } = await supabase
+    const { data: updatedProfile, error } = await supabase
       .from("profiles")
       .update({
         charity_id,
-        charity_contribution_percent: percent,
       })
-      .eq("id", req.user!.id);
+      .eq("id", req.user!.id)
+      .select("id, charity_id")
+      .maybeSingle();
 
     if (error) {
       res.status(500).json({ success: false, error: error.message });
       return;
     }
 
-    res.json({ success: true, message: "Charity selection updated" });
+    const { data: selectedCharity } = await supabase
+      .from("charities")
+      .select("id, name")
+      .eq("id", charity_id)
+      .maybeSingle();
+
+    res.json({
+      success: true,
+      message: "Charity selection updated",
+      data: {
+        profile: updatedProfile,
+        charity: selectedCharity ?? null,
+      },
+    });
   },
 );
 
