@@ -13,6 +13,14 @@ html {
 body {
   background-color: var(--gc-background);
   color: #ffffff;
+  font-family:
+    var(--font-inter),
+    "Segoe UI",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

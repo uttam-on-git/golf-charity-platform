@@ -1,7 +1,7 @@
 'use client';
 
 import axios from 'axios';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SyntheticEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { SectionCard, StatCard } from '@/components/dashboard/overview-primitives';
 import api from '@/lib/axios';
@@ -62,7 +62,7 @@ export default function ScoresPage() {
     void fetchScores();
   }, [fetchScores]);
 
-  const handleAdd = async (e: React.FormEvent) => {
+  const handleAdd = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
     setLoading(true);

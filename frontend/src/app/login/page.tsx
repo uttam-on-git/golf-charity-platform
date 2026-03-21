@@ -2,12 +2,12 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FormEvent, useState } from 'react';
+import { Suspense, SyntheticEvent, useState } from 'react';
 
 import Logo from '@/components/Logo';
 import { useAuth } from '@/context/AuthContext';
 
-export default function LoginPage() {
+function LoginPageContent() {
   const { login } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -17,7 +17,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const registered = searchParams.get('registered') === 'true';
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
     setLoading(true);
@@ -202,5 +202,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#050505]" />}>
+      <LoginPageContent />
+    </Suspense>
   );
 }
