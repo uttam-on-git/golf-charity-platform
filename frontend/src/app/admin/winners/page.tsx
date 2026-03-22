@@ -12,6 +12,10 @@ interface Winner {
   prize_amount: number;
   verified: boolean;
   payment_status: string;
+  verification_status?: 'pending' | 'approved' | 'rejected' | null;
+  verification_notes?: string | null;
+  proof_url?: string | null;
+  proof_file_name?: string | null;
   profiles?: { full_name?: string | null } | null;
   draws?: { month?: string | null } | null;
 }
@@ -53,13 +57,20 @@ export default function AdminWinnersPage() {
     }
   };
 
-  const updateWinner = async (winner: Winner, nextVerified: boolean, nextPaymentStatus: string) => {
+  const updateWinner = async (
+    winner: Winner,
+    nextVerificationStatus: 'pending' | 'approved' | 'rejected',
+    nextPaymentStatus: string,
+    notes?: string | null,
+  ) => {
     setSavingId(winner.id);
     setError('');
     try {
       await api.patch(`/admin/winners/${winner.id}/verify`, {
-        verified: nextVerified,
+        verified: nextVerificationStatus === 'approved',
         payment_status: nextPaymentStatus,
+        verification_status: nextVerificationStatus,
+        verification_notes: notes ?? null,
       });
       await fetchWinners();
     } catch (err) {
@@ -169,16 +180,32 @@ export default function AdminWinnersPage() {
 
                   <div className="flex flex-col sm:flex-row sm:items-center gap-3 lg:justify-end">
                     <span className={`text-xs px-2.5 py-1 rounded-full border ${winner.verified ? 'bg-[#10b981]/10 text-[#10b981] border-[#10b981]/20' : 'bg-[#141414] text-zinc-300 border-[#2a2a2a]'}`}>
-                      {winner.verified ? 'Verified' : 'Pending verification'}
+                      {winner.verification_status === 'rejected'
+                        ? 'Rejected'
+                        : winner.verification_status === 'approved' || winner.verified
+                          ? 'Verified'
+                          : 'Pending verification'}
                     </span>
                     <span className={`text-xs px-2.5 py-1 rounded-full border ${winner.payment_status === 'paid' ? 'bg-[#10b981]/10 text-[#10b981] border-[#10b981]/20' : 'bg-yellow-500/10 text-yellow-300 border-yellow-500/20'}`}>
                       {winner.payment_status}
                     </span>
+                    {winner.proof_url ? (
+                      <a
+                        href={winner.proof_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-medium text-zinc-300 hover:text-white transition-colors"
+                      >
+                        View proof
+                      </a>
+                    ) : (
+                      <span className="text-xs text-zinc-500">No proof uploaded</span>
+                    )}
                     <div className="flex gap-2">
                       <button
                         type="button"
                         disabled={busy}
-                        onClick={() => void updateWinner(winner, true, winner.payment_status === 'paid' ? 'paid' : 'pending')}
+                        onClick={() => void updateWinner(winner, 'approved', winner.payment_status === 'paid' ? 'paid' : 'pending')}
                         className="rounded-lg border border-[#1e1e1e] bg-[#141414] px-3 py-2 text-xs font-medium text-white transition hover:border-[#2a2a2a] disabled:opacity-50"
                       >
                         {busy ? 'Saving...' : 'Verify'}
@@ -186,7 +213,15 @@ export default function AdminWinnersPage() {
                       <button
                         type="button"
                         disabled={busy}
-                        onClick={() => void updateWinner(winner, true, 'paid')}
+                        onClick={() => void updateWinner(winner, 'rejected', 'pending', 'Proof rejected. Please upload a clearer score screenshot.')}
+                        className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 transition hover:bg-red-500/15 disabled:opacity-50"
+                      >
+                        Reject
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void updateWinner(winner, 'approved', 'paid')}
                         className="rounded-lg bg-[#10b981] px-3 py-2 text-xs font-semibold text-[#0a0a0a] transition hover:bg-emerald-400 disabled:opacity-50"
                       >
                         Mark Paid

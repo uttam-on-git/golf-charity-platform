@@ -66,6 +66,17 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    label: 'Notifications',
+    shortLabel: 'Alerts',
+    href: '/dashboard/notifications',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M10.268 21a2 2 0 0 0 3.464 0" />
+        <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .738-1.674C19.41 13.868 18 12.2 18 8A6 6 0 0 0 6 8c0 4.2-1.411 5.868-2.738 7.326" />
+      </svg>
+    ),
+  },
+  {
     label: 'Subscription',
     shortLabel: 'Profile',
     href: '/dashboard/subscription',

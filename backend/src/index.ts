@@ -10,6 +10,7 @@ import charityRoutes from './routes/charities.js';
 import subscriptionRoutes from './routes/subscriptions.js';
 import drawRoutes from './routes/draws.js';
 import adminRoutes from './routes/admin.js';
+import notificationRoutes from './routes/notifications.js';
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ app.get('/api/health', async (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/scores', scoreRoutes);
 app.use('/api/charities', charityRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/draws', drawRoutes);
 app.use('/api/admin', adminRoutes);

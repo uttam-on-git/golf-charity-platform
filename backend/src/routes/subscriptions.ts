@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import stripe from "../config/stripe.js";
 import supabase from "../config/supabase.js";
 import { authenticate, AuthRequest } from "../middleware/auth.js";
+import { notifyUser } from "../services/notifications.js";
 
 const router = Router();
 
@@ -272,6 +273,15 @@ router.post(
         renewsAt: new Date(renewsAt * 1000).toISOString(),
       });
 
+      await notifyUser({
+        userId: req.user!.id,
+        title: 'Subscription confirmed',
+        message: `Your ${plan} membership is active and your dashboard benefits are unlocked.`,
+        category: 'billing',
+        actionUrl: '/dashboard/subscription',
+        dedupeKey: `subscription-active-${subscriptionId}`,
+      });
+
       const { data: subscription, error } = await supabase
         .from("subscriptions")
         .select("*")
@@ -339,6 +349,15 @@ router.post(
       cancel_at_period_end: true,
     });
 
+    await notifyUser({
+      userId: req.user!.id,
+      title: 'Subscription cancellation scheduled',
+      message: 'Your subscription will remain active until the current billing period ends.',
+      category: 'billing',
+      actionUrl: '/dashboard/subscription',
+      dedupeKey: `subscription-cancel-${sub.stripe_subscription_id}`,
+    });
+
     res.json({
       success: true,
       message: "Subscription cancelled at period end",
@@ -404,6 +423,15 @@ router.post("/webhook", async (req: Request, res: Response): Promise<void> => {
         subscriptionId,
         renewsAt: new Date(renewsAt * 1000).toISOString(),
       });
+
+      await notifyUser({
+        userId,
+        title: 'Subscription confirmed',
+        message: `Your ${plan} membership is active and your dashboard benefits are unlocked.`,
+        category: 'billing',
+        actionUrl: '/dashboard/subscription',
+        dedupeKey: `subscription-active-${subscriptionId}`,
+      });
     }
 
     if (event.type === "customer.subscription.updated") {
@@ -426,6 +454,12 @@ router.post("/webhook", async (req: Request, res: Response): Promise<void> => {
           : invoice.subscription?.id;
 
       if (subscriptionId) {
+        const { data: subscriptionRow } = await supabase
+          .from("subscriptions")
+          .select("user_id")
+          .eq("stripe_subscription_id", subscriptionId)
+          .maybeSingle();
+
         const { error } = await supabase
           .from("subscriptions")
           .update({ status: "lapsed" })
@@ -435,6 +469,17 @@ router.post("/webhook", async (req: Request, res: Response): Promise<void> => {
           throw new Error(
             `Failed to mark subscription as lapsed: ${error.message}`,
           );
+        }
+
+        if (subscriptionRow?.user_id) {
+          await notifyUser({
+            userId: subscriptionRow.user_id,
+            title: 'Subscription payment failed',
+            message: 'We could not renew your membership. Please update billing details to restore full access.',
+            category: 'billing',
+            actionUrl: '/dashboard/subscription',
+            dedupeKey: `subscription-lapsed-${subscriptionId}`,
+          });
         }
       }
     }

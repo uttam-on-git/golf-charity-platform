@@ -1,5 +1,6 @@
 ﻿'use client';
 
+import axios from 'axios';
 import { useEffect, useMemo, useState } from 'react';
 
 import { SectionCard, StatCard } from '@/components/dashboard/overview-primitives';
@@ -20,6 +21,10 @@ interface Winning {
   match_type: string;
   prize_amount: number;
   payment_status: string;
+  verification_status?: 'pending' | 'approved' | 'rejected' | null;
+  verification_notes?: string | null;
+  proof_url?: string | null;
+  proof_file_name?: string | null;
   draws: { month: string; winning_numbers: number[] };
 }
 
@@ -42,6 +47,7 @@ export default function DrawsPage() {
   const [winnings, setWinnings] = useState<Winning[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
 
   useEffect(() => {
     void fetchData();
@@ -71,6 +77,36 @@ export default function DrawsPage() {
   );
 
   const latestDraw = draws[0];
+
+  const uploadProof = async (winnerId: string, file: File) => {
+    setUploadingId(winnerId);
+    setError('');
+
+    try {
+      const fileData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result ?? ''));
+        reader.onerror = () => reject(new Error('Failed to read the file'));
+        reader.readAsDataURL(file);
+      });
+
+      await api.post(`/draws/me/winnings/${winnerId}/proof`, {
+        file_name: file.name,
+        content_type: file.type,
+        file_data: fileData,
+      });
+
+      await fetchData();
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.error || 'Failed to upload proof');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to upload proof');
+      }
+    } finally {
+      setUploadingId(null);
+    }
+  };
 
   if (loading) {
     return <DashboardPageLoader title="Loading draw history" subtitle="Fetching published draws, prize pools, and your winnings." />;
@@ -158,12 +194,66 @@ export default function DrawsPage() {
                       </span>
                     </div>
                   </div>
+                  <div className="mb-4 flex flex-wrap items-center gap-2">
+                    <span
+                      className={`text-[11px] px-2 py-1 rounded-full border ${
+                        item.verification_status === 'approved'
+                          ? 'bg-[#10b981]/10 text-[#10b981] border-[#10b981]/20'
+                          : item.verification_status === 'rejected'
+                            ? 'bg-red-500/10 text-red-300 border-red-500/20'
+                            : 'bg-[#141414] text-zinc-300 border-[#2a2a2a]'
+                      }`}
+                    >
+                      {item.verification_status === 'approved'
+                        ? 'Proof approved'
+                        : item.verification_status === 'rejected'
+                          ? 'Proof rejected'
+                          : item.proof_url
+                            ? 'Proof submitted'
+                            : 'Proof needed'}
+                    </span>
+                    {item.proof_url ? (
+                      <a
+                        href={item.proof_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-medium text-zinc-300 hover:text-white transition-colors"
+                      >
+                        View uploaded proof
+                      </a>
+                    ) : null}
+                  </div>
                   <div className="flex gap-2 flex-wrap">
                     {item.draws?.winning_numbers?.map((number) => (
                       <div key={`${item.id}-${number}`} className="w-8 h-8 rounded-full bg-[#141414] border border-[#2a2a2a] flex items-center justify-center text-xs font-semibold text-zinc-100">
                         {number}
                       </div>
                     ))}
+                  </div>
+                  <div className="mt-4 rounded-xl border border-[#1e1e1e] bg-[#090909] p-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium mb-2">Winner Proof</p>
+                    <p className="text-sm text-zinc-400 mb-3">
+                      Upload a screenshot of your qualifying scores so the admin team can verify your entry.
+                    </p>
+                    {item.verification_status === 'rejected' && item.verification_notes ? (
+                      <p className="mb-3 text-xs text-red-300">{item.verification_notes}</p>
+                    ) : null}
+                    <label className="inline-flex items-center gap-3 rounded-lg border border-[#2a2a2a] bg-[#141414] px-3 py-2 text-xs font-medium text-zinc-200 hover:border-[#3a3a3a] transition-colors cursor-pointer">
+                      <span>{uploadingId === item.id ? 'Uploading...' : item.proof_url ? 'Replace proof' : 'Upload proof'}</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        disabled={uploadingId === item.id}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) {
+                            void uploadProof(item.id, file);
+                          }
+                          event.currentTarget.value = '';
+                        }}
+                      />
+                    </label>
                   </div>
                 </div>
               ))}

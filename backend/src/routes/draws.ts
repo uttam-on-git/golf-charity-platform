@@ -2,8 +2,27 @@ import { Router, Response } from 'express';
 import supabase from '../config/supabase.js';
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth.js';
 import { runDraw, calculatePrizes } from '../services/drawEngine.js';
+import { notifyUsers } from '../services/notifications.js';
 
 const router = Router();
+const WINNER_PROOF_BUCKET = 'winner-proofs';
+
+function sanitizeFileName(value: string) {
+  return value.replace(/[^a-zA-Z0-9._-]/g, '-');
+}
+
+async function ensureWinnerProofBucket() {
+  const { data: buckets } = await supabase.storage.listBuckets();
+  const exists = buckets?.some((bucket) => bucket.name === WINNER_PROOF_BUCKET);
+
+  if (!exists) {
+    await supabase.storage.createBucket(WINNER_PROOF_BUCKET, {
+      public: true,
+      fileSizeLimit: 5 * 1024 * 1024,
+      allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    });
+  }
+}
 
 // GET /api/draws - get all published draws (public)
 router.get('/', async (_req, res) => {
@@ -51,6 +70,95 @@ router.get('/me/winnings', authenticate, async (req: AuthRequest, res: Response)
   }
 
   res.json({ success: true, data });
+});
+
+router.post('/me/winnings/:id/proof', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { file_name, file_data, content_type } = req.body as {
+    file_name?: string;
+    file_data?: string;
+    content_type?: string;
+  };
+
+  if (!file_name || !file_data || !content_type) {
+    res.status(400).json({ success: false, error: 'file_name, file_data, and content_type are required' });
+    return;
+  }
+
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(content_type)) {
+    res.status(400).json({ success: false, error: 'Only JPG, PNG, and WEBP screenshots are supported' });
+    return;
+  }
+
+  const { data: winner, error: winnerError } = await supabase
+    .from('winners')
+    .select('id, user_id, payment_status')
+    .eq('id', req.params.id)
+    .eq('user_id', req.user!.id)
+    .maybeSingle();
+
+  if (winnerError || !winner) {
+    res.status(404).json({ success: false, error: 'Winning entry not found' });
+    return;
+  }
+
+  const normalizedBase64 = file_data.replace(/^data:[^;]+;base64,/, '');
+  const buffer = Buffer.from(normalizedBase64, 'base64');
+
+  if (!buffer.length) {
+    res.status(400).json({ success: false, error: 'Uploaded file is empty' });
+    return;
+  }
+
+  if (buffer.length > 5 * 1024 * 1024) {
+    res.status(400).json({ success: false, error: 'Proof screenshot must be 5MB or smaller' });
+    return;
+  }
+
+  await ensureWinnerProofBucket();
+
+  const safeFileName = sanitizeFileName(file_name);
+  const storagePath = `${req.user!.id}/${winner.id}-${Date.now()}-${safeFileName}`;
+  const uploadRes = await supabase.storage
+    .from(WINNER_PROOF_BUCKET)
+    .upload(storagePath, buffer, {
+      contentType: content_type,
+      upsert: true,
+    });
+
+  if (uploadRes.error) {
+    res.status(500).json({ success: false, error: uploadRes.error.message });
+    return;
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from(WINNER_PROOF_BUCKET)
+    .getPublicUrl(storagePath);
+
+  const { data, error } = await supabase
+    .from('winners')
+    .update({
+      proof_url: publicUrlData.publicUrl,
+      proof_file_name: file_name,
+      proof_uploaded_at: new Date().toISOString(),
+      verification_status: 'pending',
+      verification_notes: null,
+      verified: false,
+      payment_status: winner.payment_status === 'paid' ? 'paid' : 'pending',
+    })
+    .eq('id', winner.id)
+    .select('*, draws(month, winning_numbers)')
+    .single();
+
+  if (error || !data) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to save proof submission' });
+    return;
+  }
+
+  res.json({
+    success: true,
+    message: 'Proof uploaded successfully',
+    data,
+  });
 });
 
 // POST /api/draws/simulate - admin: simulate a draw (preview, not saved)
@@ -154,6 +262,42 @@ router.post(
       res.status(404).json({ success: false, error: 'Draft draw not found' });
       return;
     }
+
+    const monthLabel = new Date(`${data.month}-01`).toLocaleDateString('en-GB', {
+      month: 'long',
+      year: 'numeric',
+    });
+
+    const [{ data: activeSubscribers }, { data: winners }] = await Promise.all([
+      supabase
+        .from('subscriptions')
+        .select('user_id')
+        .eq('status', 'active'),
+      supabase
+        .from('winners')
+        .select('user_id')
+        .eq('draw_id', data.id),
+    ]);
+
+    const subscriberNotifications = (activeSubscribers ?? []).map((subscription) => ({
+      userId: subscription.user_id,
+      title: `${monthLabel} draw results are live`,
+      message: 'The latest winning numbers have been published. Check the draw history to see how your numbers matched.',
+      category: 'draw_result' as const,
+      actionUrl: '/dashboard/draws',
+      dedupeKey: `draw-published-${data.id}`,
+    }));
+
+    const winnerNotifications = [...new Set((winners ?? []).map((winner) => winner.user_id))].map((userId) => ({
+      userId,
+      title: 'You have a winning entry',
+      message: `You matched numbers in the ${monthLabel} draw. Upload your proof screenshot so the admin team can review your win.`,
+      category: 'winner_alert' as const,
+      actionUrl: '/dashboard/draws',
+      dedupeKey: `winner-alert-${data.id}`,
+    }));
+
+    await notifyUsers([...subscriberNotifications, ...winnerNotifications]);
 
     res.json({ success: true, data });
   }

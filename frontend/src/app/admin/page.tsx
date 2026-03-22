@@ -11,6 +11,14 @@ interface Stats {
   active_subscribers: number;
   total_prize_pool: number;
   total_charity_contributions: number;
+  published_draws: number;
+  draft_draws: number;
+  pending_winner_reviews: number;
+  paid_winners: number;
+  monthly_subscribers: number;
+  yearly_subscribers: number;
+  average_contribution_percent: number;
+  top_charities: { id: string; name: string; supporters: number; featured: boolean }[];
 }
 
 export default function AdminOverview() {
@@ -85,6 +93,31 @@ export default function AdminOverview() {
           </svg>
         ),
       },
+      {
+        label: 'Published Draws',
+        value: String(stats?.published_draws ?? 0),
+        suffix: `${stats?.draft_draws ?? 0} drafts waiting`,
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <path d="M16 2v4" />
+            <path d="M8 2v4" />
+            <path d="M3 10h18" />
+          </svg>
+        ),
+      },
+      {
+        label: 'Pending Reviews',
+        value: String(stats?.pending_winner_reviews ?? 0),
+        suffix: `${stats?.paid_winners ?? 0} winners paid`,
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 8v4" />
+            <path d="M12 16h.01" />
+            <circle cx="12" cy="12" r="10" />
+          </svg>
+        ),
+      },
     ],
     [stats],
   );
@@ -108,7 +141,7 @@ export default function AdminOverview() {
         <AdminPageLoader />
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6 mb-8 md:mb-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6 mb-8 md:mb-10">
             {cards.map((card) => (
               <StatCard key={card.label} {...card} />
             ))}
@@ -132,17 +165,87 @@ export default function AdminOverview() {
                 <p className="text-xs text-zinc-500 mt-2">Active subscribers versus total accounts.</p>
               </div>
               <div className="rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] p-5">
-                <div className="text-sm text-zinc-500 mb-2">Prize-to-charity ratio</div>
-                <div className="text-white font-semibold text-lg tracking-tight">90 / 10</div>
-                <p className="text-xs text-zinc-500 mt-2">Current platform split based on your admin stats endpoint.</p>
+                <div className="text-sm text-zinc-500 mb-2">Average contribution</div>
+                <div className="text-white font-semibold text-lg tracking-tight">
+                  {stats?.average_contribution_percent?.toFixed(1) ?? '10.0'}%
+                </div>
+                <p className="text-xs text-zinc-500 mt-2">Average configured giving rate across member profiles.</p>
               </div>
               <div className="rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] p-5">
                 <div className="text-sm text-zinc-500 mb-2">Recommended next step</div>
-                <div className="text-white font-semibold text-lg tracking-tight">Review pending draws</div>
-                <p className="text-xs text-zinc-500 mt-2">Use Draw Control to simulate and publish safely.</p>
+                <div className="text-white font-semibold text-lg tracking-tight">
+                  {stats?.pending_winner_reviews ? 'Review winner queue' : 'Check draw pipeline'}
+                </div>
+                <p className="text-xs text-zinc-500 mt-2">
+                  {stats?.pending_winner_reviews
+                    ? 'Winners still need approval or rejection.'
+                    : 'Use Draw Control to simulate and publish safely.'}
+                </p>
               </div>
             </div>
           </SectionCard>
+
+          <div className="grid gap-4 md:grid-cols-2 mt-8 md:mt-10">
+            <SectionCard
+              title="Plan Mix"
+              icon={
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#10b981]" aria-hidden="true">
+                  <rect width="20" height="14" x="2" y="5" rx="2" />
+                  <line x1="2" x2="22" y1="10" y2="10" />
+                </svg>
+              }
+            >
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] p-5">
+                  <div className="text-sm text-zinc-500 mb-2">Monthly subscribers</div>
+                  <div className="text-white font-semibold text-2xl tracking-tight">{stats?.monthly_subscribers ?? 0}</div>
+                  <p className="text-xs text-zinc-500 mt-2">Flexible month-to-month members.</p>
+                </div>
+                <div className="rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] p-5">
+                  <div className="text-sm text-zinc-500 mb-2">Yearly subscribers</div>
+                  <div className="text-white font-semibold text-2xl tracking-tight">{stats?.yearly_subscribers ?? 0}</div>
+                  <p className="text-xs text-zinc-500 mt-2">Higher-retention annual memberships.</p>
+                </div>
+              </div>
+            </SectionCard>
+
+            <SectionCard
+              title="Charity Leaders"
+              icon={
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#10b981]" aria-hidden="true">
+                  <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+                </svg>
+              }
+            >
+              {stats?.top_charities?.length ? (
+                <div className="space-y-3">
+                  {stats.top_charities.map((charity, index) => (
+                    <div key={charity.id} className="rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] px-4 py-4 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-[#141414] border border-[#2a2a2a] flex items-center justify-center text-zinc-100 font-semibold">
+                          {index + 1}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-zinc-100">{charity.name}</p>
+                          <p className="text-xs text-zinc-500 mt-1">
+                            {charity.featured ? 'Featured partner' : 'Directory partner'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-semibold text-white">{charity.supporters}</p>
+                        <p className="text-xs text-zinc-500 mt-1">supporters</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-[#2a2a2a] bg-[#0a0a0a] px-5 py-8 text-center text-sm text-zinc-500">
+                  No charity support data yet.
+                </div>
+              )}
+            </SectionCard>
+          </div>
         </>
       )}
     </div>
