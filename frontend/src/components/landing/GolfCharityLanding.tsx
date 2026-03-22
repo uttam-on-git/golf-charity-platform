@@ -61,6 +61,33 @@ export default function GolfCharityLanding() {
   }, []);
 
   const dashboardHref = user?.role === 'admin' ? '/admin' : '/dashboard';
+  const authActions = loading ? (
+    <div className="flex items-center gap-3" aria-live="polite" aria-busy="true">
+      <span className="hidden text-sm font-medium text-gray-500 sm:inline">Checking account</span>
+      <div className="h-10 w-32 rounded-full loading-shimmer" aria-hidden="true" />
+    </div>
+  ) : user ? (
+    <Link
+      href={dashboardHref}
+      className="bg-emerald-500 hover:bg-emerald-400 text-[#0a0a0a] font-semibold text-sm px-5 py-2.5 rounded-full flex items-center gap-2 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] active:scale-[0.97]"
+    >
+      Dashboard
+      <ArrowRightIcon className="size-4" />
+    </Link>
+  ) : (
+    <>
+      <Link href="/login" className="text-sm text-gray-400 hover:text-white transition-colors font-medium">
+        Log in
+      </Link>
+      <Link
+        href="/register"
+        className="bg-emerald-500 hover:bg-emerald-400 text-[#0a0a0a] font-semibold text-sm px-5 py-2.5 rounded-full flex items-center gap-2 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] active:scale-[0.97]"
+      >
+        Get Started
+        <ArrowRightIcon className="size-4" />
+      </Link>
+    </>
+  );
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[#0a0a0a] text-white selection:bg-emerald-500/30 selection:text-white">
@@ -77,28 +104,7 @@ export default function GolfCharityLanding() {
             <Link href="/charities" className="text-sm text-gray-400 hover:text-white transition-colors font-medium">
               Charities
             </Link>
-            {loading ? null : user ? (
-              <Link
-                href={dashboardHref}
-                className="bg-emerald-500 hover:bg-emerald-400 text-[#0a0a0a] font-semibold text-sm px-5 py-2.5 rounded-full flex items-center gap-2 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] active:scale-[0.97]"
-              >
-                Dashboard
-                <ArrowRightIcon className="size-4" />
-              </Link>
-            ) : (
-              <>
-                <Link href="/login" className="text-sm text-gray-400 hover:text-white transition-colors font-medium">
-                  Log in
-                </Link>
-                <Link
-                  href="/register"
-                  className="bg-emerald-500 hover:bg-emerald-400 text-[#0a0a0a] font-semibold text-sm px-5 py-2.5 rounded-full flex items-center gap-2 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] active:scale-[0.97]"
-                >
-                  Get Started
-                  <ArrowRightIcon className="size-4" />
-                </Link>
-              </>
-            )}
+            {authActions}
           </div>
         </div>
       </nav>
