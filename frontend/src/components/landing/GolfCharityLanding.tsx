@@ -74,6 +74,9 @@ export default function GolfCharityLanding() {
           </Link>
 
           <div className="flex items-center gap-6">
+            <Link href="/charities" className="text-sm text-gray-400 hover:text-white transition-colors font-medium">
+              Charities
+            </Link>
             {loading ? null : user ? (
               <Link
                 href={dashboardHref}
@@ -234,6 +237,11 @@ export default function GolfCharityLanding() {
                     </li>
                   ))}
                 </ul>
+                <div className="mt-10">
+                  <LinkButton href="/charities" variant="secondary">
+                    Browse Charity Directory
+                  </LinkButton>
+                </div>
               </div>
 
               <div className="bg-(--gc-surface) border border-(--gc-border) rounded-3xl p-8 lg:p-12 reveal reveal-delay-1 relative overflow-hidden shadow-2xl">
@@ -363,6 +371,9 @@ export default function GolfCharityLanding() {
             </Link>
             <Link href="/" className="hover:text-emerald-500 transition-colors">
               Privacy Policy
+            </Link>
+            <Link href="/charities" className="hover:text-emerald-500 transition-colors">
+              Charities
             </Link>
             <Link href="/" className="hover:text-emerald-500 transition-colors">
               Contact
