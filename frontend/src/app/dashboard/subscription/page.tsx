@@ -133,7 +133,13 @@ export default function SubscriptionPage() {
   const cancellationScheduled = sub?.status === 'cancelled' && hasAccess;
 
   if (loading) {
-    return <DashboardPageLoader title="Loading subscription details" subtitle="Pulling your plan, renewal timing, and billing status." />;
+    return (
+      <DashboardPageLoader
+        title="Loading your subscription"
+        subtitle="Syncing plan status, renewal timing, and the latest billing controls."
+        variant="subscription"
+      />
+    );
   }
 
   return (

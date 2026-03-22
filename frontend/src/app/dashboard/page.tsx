@@ -233,6 +233,7 @@ export default function DashboardPage() {
       <DashboardPageLoader
         title="Loading your overview"
         subtitle="Pulling your membership, scores, draws, and charity impact into one place."
+        variant="overview"
       />
     );
   }

@@ -60,12 +60,12 @@ export function SectionCard({ title, icon, action, children, className }: Sectio
         className,
       )}
     >
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-base md:text-lg font-medium text-zinc-100 flex items-center gap-2">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="min-w-0 text-base md:text-lg font-medium text-zinc-100 flex items-center gap-2">
           <span className="size-5 block">{icon}</span>
-          {title}
+          <span className="truncate">{title}</span>
         </h2>
-        {action}
+        {action ? <div className="shrink-0 self-start sm:self-auto">{action}</div> : null}
       </div>
       {children}
     </section>

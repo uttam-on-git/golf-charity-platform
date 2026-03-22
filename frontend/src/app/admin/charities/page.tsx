@@ -406,13 +406,10 @@ export default function AdminCharitiesPage() {
           ) : (
             <div className="grid gap-3 md:grid-cols-2">
               {charities.map((charity) => (
-                <article key={charity.id} className="rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] p-5 hover:border-[#2a2a2a] transition-colors">
+                <article key={charity.id} className="min-w-0 rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] p-5 hover:border-[#2a2a2a] transition-colors">
                   <div className="flex items-start justify-between gap-3 mb-3">
-                    <div>
-                      <h3 className="text-white font-medium leading-snug">{charity.name}</h3>
-                      {charity.image_url ? (
-                        <p className="text-xs text-zinc-500 mt-1 truncate">{charity.image_url}</p>
-                      ) : null}
+                    <div className="min-w-0 flex-1">
+                      <h3 className="break-words text-white font-medium leading-snug">{charity.name}</h3>
                     </div>
                     {charity.is_featured ? (
                       <span className="text-[11px] bg-[#10b981]/10 text-[#10b981] px-2 py-0.5 rounded-full border border-[#10b981]/20 whitespace-nowrap">
@@ -420,8 +417,8 @@ export default function AdminCharitiesPage() {
                       </span>
                     ) : null}
                   </div>
-                  <p className="text-sm text-zinc-500 leading-relaxed mb-4">{charity.description}</p>
-                  <div className="flex items-center gap-2">
+                  <p className="mb-4 break-words text-sm text-zinc-500 leading-relaxed">{charity.description}</p>
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       onClick={() => handleEdit(charity)}
@@ -580,11 +577,11 @@ export default function AdminCharitiesPage() {
                 ) : (
                   <div className="space-y-3">
                     {events.map((eventItem) => (
-                      <article key={eventItem.id} className="rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] p-5">
+                      <article key={eventItem.id} className="min-w-0 rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] p-5">
                         <div className="flex items-start justify-between gap-3 mb-3">
-                          <div>
-                            <h3 className="text-white font-medium leading-snug">{eventItem.title}</h3>
-                            <p className="text-xs text-zinc-500 mt-1">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="break-words text-white font-medium leading-snug">{eventItem.title}</h3>
+                            <p className="mt-1 break-words text-xs text-zinc-500">
                               {new Date(eventItem.event_date).toLocaleString('en-GB')}
                               {eventItem.location ? ` · ${eventItem.location}` : ''}
                             </p>
@@ -599,8 +596,8 @@ export default function AdminCharitiesPage() {
                             {eventItem.is_published ? 'Published' : 'Hidden'}
                           </span>
                         </div>
-                        <p className="text-sm text-zinc-500 leading-relaxed mb-4">{eventItem.summary}</p>
-                        <div className="flex items-center gap-2">
+                        <p className="mb-4 break-words text-sm text-zinc-500 leading-relaxed">{eventItem.summary}</p>
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
                             onClick={() => handleEditEvent(eventItem)}
