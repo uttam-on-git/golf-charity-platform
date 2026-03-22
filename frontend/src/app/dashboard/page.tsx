@@ -45,6 +45,7 @@ interface Charity {
 
 interface ProfileResponse {
   charity_id?: string | number | null;
+  contribution_percent?: number | null;
   charities?: { name?: string | null } | null;
 }
 
@@ -105,6 +106,7 @@ export default function DashboardPage() {
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [selectedCharity, setSelectedCharity] = useState<Charity | null>(null);
   const [profileCharityName, setProfileCharityName] = useState<string | null>(null);
+  const [contributionPercent, setContributionPercent] = useState(10);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -159,6 +161,7 @@ export default function DashboardPage() {
         setWinnings(nextWinnings);
         setSubscription(nextSubscription);
         setProfileCharityName(profile?.charities?.name ?? null);
+        setContributionPercent(profile?.contribution_percent ?? 10);
         setSelectedCharity(
           currentCharity ??
             resolveSelectedCharity([], currentCharityId, profile?.charities?.name ?? null),
@@ -190,7 +193,7 @@ export default function DashboardPage() {
 
   const recentScores = scores.slice(0, 3);
   const activeStatus = subscription?.status === 'active';
-  const contributionRate = selectedCharity ? '10%' : 'Not set';
+  const contributionRate = selectedCharity ? `${contributionPercent}%` : 'Not set';
   const paidWinningsCount = winnings.filter((item) => item.payment_status === 'paid').length;
 
   if (loading) {

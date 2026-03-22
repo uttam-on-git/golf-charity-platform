@@ -16,6 +16,7 @@ interface Charity {
 
 interface ProfileResponse {
   charity_id?: string | number | null;
+  contribution_percent?: number | null;
   charities?: { name?: string | null } | null;
 }
 
@@ -73,7 +74,7 @@ export default function CharityPage() {
       setCharities(nextCharities);
       if (profile.charity_id) setSelected(String(profile.charity_id));
       setProfileCharityName(profile.charities?.name ?? null);
-      setPercent(10);
+      setPercent(profile.contribution_percent ?? 10);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load charities');
     } finally {
@@ -115,6 +116,7 @@ export default function CharityPage() {
 
       setSelected(String(currentId));
       setProfileCharityName(refreshedProfile.charities?.name ?? current?.name ?? profileCharityName);
+      setPercent(refreshedProfile.contribution_percent ?? percent);
       setMessage('Charity selection updated successfully.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update charity');

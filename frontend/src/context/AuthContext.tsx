@@ -9,13 +9,14 @@ interface User {
   role: string;
   full_name?: string | null;
   charity_id?: string | null;
+  contribution_percent?: number | null;
 }
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
   login: (email: string, password: string) => Promise<User>;
-  register: (email: string, password: string, full_name: string) => Promise<void>;
+  register: (email: string, password: string, full_name: string, charity_id: string) => Promise<void>;
   logout: () => void;
   loading: boolean;
 }
@@ -61,8 +62,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return user;
   };
 
-  const register = async (email: string, password: string, full_name: string) => {
-    await api.post('/auth/register', { email, password, full_name });
+  const register = async (email: string, password: string, full_name: string, charity_id: string) => {
+    await api.post('/auth/register', { email, password, full_name, charity_id });
   };
 
   const logout = () => {

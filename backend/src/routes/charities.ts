@@ -88,9 +88,10 @@ router.put(
       .from("profiles")
       .update({
         charity_id,
+        contribution_percent: percent,
       })
       .eq("id", req.user!.id)
-      .select("id, charity_id")
+      .select("id, charity_id, contribution_percent")
       .maybeSingle();
 
     if (error) {

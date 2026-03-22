@@ -6,10 +6,27 @@ const router = Router();
 
 // POST /api/auth/register
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
-  const { email, password, full_name } = req.body;
+  const { email, password, full_name, charity_id, contribution_percent } = req.body;
 
-  if (!email || !password || !full_name) {
+  if (!email || !password || !full_name || !charity_id) {
     res.status(400).json({ success: false, error: 'All fields required' });
+    return;
+  }
+
+  const { data: charity, error: charityError } = await supabase
+    .from('charities')
+    .select('id')
+    .eq('id', charity_id)
+    .maybeSingle();
+
+  if (charityError || !charity) {
+    res.status(400).json({ success: false, error: 'Please choose a valid charity' });
+    return;
+  }
+
+  const percent = contribution_percent ?? 10;
+  if (percent < 10 || percent > 100) {
+    res.status(400).json({ success: false, error: 'Contribution must be between 10% and 100%' });
     return;
   }
 
@@ -25,6 +42,8 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     id: data.user.id,
     full_name,
     role: 'subscriber',
+    charity_id,
+    contribution_percent: percent,
   });
 
   res.status(201).json({ success: true, message: 'Account created. Please verify your email.' });
@@ -43,7 +62,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('full_name, role, charity_id')
+    .select('full_name, role, charity_id, contribution_percent')
     .eq('id', data.user.id)
     .maybeSingle();
 
@@ -56,6 +75,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       full_name: profile?.full_name ?? null,
       role: profile?.role ?? 'subscriber',
       charity_id: profile?.charity_id ?? null,
+      contribution_percent: profile?.contribution_percent ?? 10,
     },
   });
 });
@@ -64,7 +84,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   const { data: profile } = await supabase
     .from('profiles')
-    .select('full_name, role, charity_id')
+    .select('full_name, role, charity_id, contribution_percent')
     .eq('id', req.user!.id)
     .maybeSingle();
 
@@ -88,6 +108,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
       role: profile?.role ?? req.user!.role,
       full_name: profile?.full_name ?? null,
       charity_id: profile?.charity_id ?? null,
+      contribution_percent: profile?.contribution_percent ?? 10,
       charities: charity,
     },
   });

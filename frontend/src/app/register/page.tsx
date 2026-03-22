@@ -1,11 +1,20 @@
 'use client';
 
+import axios from 'axios';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { SyntheticEvent, useState } from 'react';
+import { SyntheticEvent, useEffect, useMemo, useState } from 'react';
 
 import Logo from '@/components/Logo';
 import { useAuth } from '@/context/AuthContext';
+import api from '@/lib/axios';
+
+interface Charity {
+  id: string;
+  name: string;
+  description: string;
+  is_featured: boolean;
+}
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -13,18 +22,54 @@ export default function RegisterPage() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [charities, setCharities] = useState<Charity[]>([]);
+  const [charityId, setCharityId] = useState('');
+  const [charityLoading, setCharityLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchCharities = async () => {
+      setCharityLoading(true);
+      try {
+        const res = await api.get('/charities');
+        const nextCharities = Array.isArray(res.data?.data) ? res.data.data : [];
+        setCharities(nextCharities);
+        setCharityId(nextCharities[0]?.id ?? '');
+      } catch (err) {
+        if (axios.isAxiosError(err)) {
+          setError(err.response?.data?.error || 'Unable to load charities right now.');
+        } else {
+          setError('Unable to load charities right now.');
+        }
+      } finally {
+        setCharityLoading(false);
+      }
+    };
+
+    void fetchCharities();
+  }, []);
+
+  const featuredCount = useMemo(
+    () => charities.filter((charity) => charity.is_featured).length,
+    [charities],
+  );
+
+  const selectedCharity = charities.find((charity) => charity.id === charityId) ?? null;
 
   const handleSubmit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
     setLoading(true);
     try {
-      await register(email, password, fullName);
+      await register(email, password, fullName, charityId);
       router.push('/login?registered=true');
-    } catch {
-      setError('Something went wrong. Please try again.');
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.error || 'Something went wrong. Please try again.');
+      } else {
+        setError('Something went wrong. Please try again.');
+      }
       setLoading(false);
     }
   };
@@ -113,7 +158,7 @@ export default function RegisterPage() {
         </div>
 
         <div className="flex-1 flex items-center justify-center px-6 py-10 lg:px-14">
-          <div className="relative w-full max-w-md glass-card rounded-[2rem] p-8 sm:p-10">
+          <div className="relative w-full max-w-lg glass-card rounded-[2rem] p-8 sm:p-10">
             <div className="absolute top-0 left-1/2 w-[70%] h-[1px] bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent -translate-x-1/2" />
             <div className="absolute -top-10 left-1/2 w-1/2 h-20 bg-emerald-500/10 blur-2xl rounded-full -translate-x-1/2 pointer-events-none" />
 
@@ -123,7 +168,7 @@ export default function RegisterPage() {
             </div>
 
             <h2 className="text-2xl font-semibold text-white text-center mb-2">Create account</h2>
-            <p className="text-sm text-zinc-400 text-center mb-6">Join and start playing for charity.</p>
+            <p className="text-sm text-zinc-400 text-center mb-6">Join, choose your cause, and start playing for charity.</p>
 
             {error && (
               <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-sm rounded-xl px-4 py-3 mb-4">
@@ -178,9 +223,56 @@ export default function RegisterPage() {
                 />
               </div>
 
+              <div className="rounded-2xl border border-zinc-800 bg-[#0d0d0f] p-4 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-white">Choose your charity</p>
+                    <p className="text-xs text-zinc-500 mt-1">
+                      Your membership starts with a 10% contribution, and you can update it later from the dashboard.
+                    </p>
+                  </div>
+                  <span className="text-[11px] px-2 py-1 rounded-full border border-[#10b981]/20 bg-[#10b981]/10 text-[#8ef0c6]">
+                    {featuredCount} featured
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="register-charity" className="sr-only">
+                    Charity
+                  </label>
+                  <select
+                    id="register-charity"
+                    value={charityId}
+                    onChange={(event) => setCharityId(event.target.value)}
+                    disabled={charityLoading || charities.length === 0}
+                    className="w-full rounded-xl border border-zinc-800 bg-[#09090b] px-4 py-3 text-sm text-white outline-none transition focus:border-[#10b981] focus:ring-2 focus:ring-[#10b981]/20 disabled:opacity-60"
+                    required
+                  >
+                    {charityLoading ? <option>Loading charities...</option> : null}
+                    {!charityLoading && charities.length === 0 ? <option>No charities available</option> : null}
+                    {!charityLoading
+                      ? charities.map((charity) => (
+                          <option key={charity.id} value={charity.id}>
+                            {charity.name}
+                          </option>
+                        ))
+                      : null}
+                  </select>
+                </div>
+
+                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                  <p className="text-sm font-medium text-white">
+                    {selectedCharity?.name ?? 'Choose a charity to continue'}
+                  </p>
+                  <p className="mt-2 text-xs leading-relaxed text-zinc-500">
+                    {selectedCharity?.description ?? 'This charity will be linked to your account as soon as you create it.'}
+                  </p>
+                </div>
+              </div>
+
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || charityLoading || !charityId}
                 className="w-full btn-glow rounded-xl bg-emerald-500 py-3.5 text-sm font-semibold text-[#0a0a0a] transition hover:bg-emerald-400 disabled:opacity-50"
               >
                 {loading ? 'Creating account...' : 'Create Account'}
