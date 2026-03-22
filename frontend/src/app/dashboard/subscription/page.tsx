@@ -13,6 +13,13 @@ interface Subscription {
   renews_at: string;
 }
 
+function hasSubscriptionAccess(subscription: Subscription | null): boolean {
+  if (!subscription) return false;
+  if (!['active', 'cancelled'].includes(subscription.status)) return false;
+  if (!subscription.renews_at) return subscription.status === 'active';
+  return new Date(subscription.renews_at).getTime() > Date.now();
+}
+
 function formatDate(value?: string | null) {
   if (!value) return 'TBD';
   return new Date(value).toLocaleDateString('en-GB', {
@@ -122,6 +129,8 @@ export default function SubscriptionPage() {
     if (!sub?.plan) return 'None';
     return sub.plan.charAt(0).toUpperCase() + sub.plan.slice(1);
   }, [sub]);
+  const hasAccess = hasSubscriptionAccess(sub);
+  const cancellationScheduled = sub?.status === 'cancelled' && hasAccess;
 
   if (loading) {
     return <DashboardPageLoader title="Loading subscription details" subtitle="Pulling your plan, renewal timing, and billing status." />;
@@ -167,7 +176,7 @@ export default function SubscriptionPage() {
         <StatCard
           label="Status"
           value={sub?.status ? sub.status.charAt(0).toUpperCase() + sub.status.slice(1) : 'Inactive'}
-          suffix={sub?.status === 'active' ? 'All benefits enabled' : 'No active billing'}
+          suffix={hasAccess ? (cancellationScheduled ? 'Benefits stay on until period close' : 'All benefits enabled') : 'No active billing'}
           icon={
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M12 2v20" />
@@ -190,9 +199,9 @@ export default function SubscriptionPage() {
         />
       </div>
 
-      {sub && sub.status === 'active' ? (
+      {sub && hasAccess ? (
         <SectionCard
-          title="Active Membership"
+          title={cancellationScheduled ? 'Membership Ending After Current Period' : 'Active Membership'}
           icon={
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#10b981]" aria-hidden="true">
               <path d="M20 6 9 17l-5-5" />
@@ -204,19 +213,31 @@ export default function SubscriptionPage() {
               <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium mb-2">Membership Summary</p>
               <h3 className="text-2xl font-semibold text-zinc-100 mb-2">{planLabel} Plan</h3>
               <p className="text-sm text-zinc-400 leading-relaxed mb-4">
-                Your subscription is active and your dashboard benefits remain unlocked, including score submissions, charity selection, and draw participation.
+                {cancellationScheduled
+                  ? 'Your cancellation is scheduled, but your dashboard benefits stay unlocked until the end of the current billing period.'
+                  : 'Your subscription is active and your dashboard benefits remain unlocked, including score submissions, charity selection, and draw participation.'}
               </p>
               <div className="flex flex-wrap gap-2">
-                <span className="text-[11px] px-2 py-1 rounded-full bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/20">Active</span>
-                <span className="text-[11px] px-2 py-1 rounded-full bg-[#141414] text-zinc-300 border border-[#2a2a2a]">Renews {formatDate(sub.renews_at)}</span>
+                <span className={`text-[11px] px-2 py-1 rounded-full border ${cancellationScheduled ? 'bg-yellow-500/10 text-yellow-200 border-yellow-500/20' : 'bg-[#10b981]/10 text-[#10b981] border-[#10b981]/20'}`}>
+                  {cancellationScheduled ? 'Ends after current period' : 'Active'}
+                </span>
+                <span className="text-[11px] px-2 py-1 rounded-full bg-[#141414] text-zinc-300 border border-[#2a2a2a]">
+                  {cancellationScheduled ? `Access until ${formatDate(sub.renews_at)}` : `Renews ${formatDate(sub.renews_at)}`}
+                </span>
               </div>
             </div>
-            <button
-              onClick={handleCancel}
-              className="text-sm font-medium text-red-300 hover:text-white transition-colors bg-[#1e1e1e] hover:bg-[#2a2a2a] border border-transparent hover:border-[#3f3f46] px-4 py-2.5 rounded-lg"
-            >
-              Cancel subscription
-            </button>
+            {sub.status === 'active' ? (
+              <button
+                onClick={handleCancel}
+                className="text-sm font-medium text-red-300 hover:text-white transition-colors bg-[#1e1e1e] hover:bg-[#2a2a2a] border border-transparent hover:border-[#3f3f46] px-4 py-2.5 rounded-lg"
+              >
+                Cancel subscription
+              </button>
+            ) : (
+              <div className="text-sm text-yellow-200 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-4 py-3">
+                Cancellation already scheduled.
+              </div>
+            )}
           </div>
         </SectionCard>
       ) : (

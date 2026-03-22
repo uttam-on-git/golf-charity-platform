@@ -14,7 +14,6 @@ body {
   background-color: var(--gc-background);
   color: #ffffff;
   font-family:
-    var(--font-inter),
     "Segoe UI",
     -apple-system,
     BlinkMacSystemFont,

@@ -12,7 +12,14 @@ interface User {
   email?: string | null;
   role: string;
   charity_id?: string | null;
-  subscriptions: { status: string; plan: string }[];
+  subscriptions: { status: string; plan: string; renews_at?: string | null; stripe_subscription_id?: string | null }[];
+}
+
+function hasSubscriptionAccess(subscription?: User['subscriptions'][number] | null): boolean {
+  if (!subscription) return false;
+  if (!['active', 'cancelled'].includes(subscription.status)) return false;
+  if (!subscription.renews_at) return subscription.status === 'active';
+  return new Date(subscription.renews_at).getTime() > Date.now();
 }
 
 interface Score {
@@ -31,14 +38,22 @@ const emptyScoreForm = {
   played_at: '',
 };
 
+const emptySubscriptionForm = {
+  plan: 'monthly',
+  status: 'lapsed',
+  renews_at: '',
+};
+
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [savingSubscription, setSavingSubscription] = useState(false);
   const [scoresLoading, setScoresLoading] = useState(false);
   const [savingScore, setSavingScore] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [profileForm, setProfileForm] = useState(emptyProfileForm);
+  const [subscriptionForm, setSubscriptionForm] = useState(emptySubscriptionForm);
   const [scores, setScores] = useState<Score[]>([]);
   const [editingScoreId, setEditingScoreId] = useState<string | null>(null);
   const [scoreForm, setScoreForm] = useState(emptyScoreForm);
@@ -73,13 +88,20 @@ export default function AdminUsersPage() {
     const selectedUser = users.find((user) => user.id === selectedUserId);
     if (!selectedUser) {
       setProfileForm(emptyProfileForm);
+      setSubscriptionForm(emptySubscriptionForm);
       setScores([]);
       return;
     }
 
+    const selectedSubscription = selectedUser.subscriptions?.[0];
     setProfileForm({
       full_name: selectedUser.full_name ?? '',
       role: selectedUser.role ?? 'subscriber',
+    });
+    setSubscriptionForm({
+      plan: selectedSubscription?.plan ?? 'monthly',
+      status: selectedSubscription?.status ?? 'lapsed',
+      renews_at: selectedSubscription?.renews_at?.slice(0, 10) ?? '',
     });
 
     void fetchScores(selectedUser.id);
@@ -174,8 +196,29 @@ export default function AdminUsersPage() {
     }
   };
 
+  const handleSubscriptionSave = async () => {
+    if (!selectedUserId) return;
+
+    setSavingSubscription(true);
+    setError('');
+    setMessage('');
+
+    try {
+      await api.patch(`/admin/users/${selectedUserId}/subscription`, {
+        ...subscriptionForm,
+        renews_at: subscriptionForm.renews_at || null,
+      });
+      setMessage('Subscription updated successfully.');
+      await fetchUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update subscription');
+    } finally {
+      setSavingSubscription(false);
+    }
+  };
+
   const activeCount = useMemo(
-    () => users.filter((user) => user.subscriptions?.[0]?.status === 'active').length,
+    () => users.filter((user) => hasSubscriptionAccess(user.subscriptions?.[0])).length,
     [users],
   );
   const adminCount = useMemo(() => users.filter((user) => user.role === 'admin').length, [users]);
@@ -298,7 +341,15 @@ export default function AdminUsersPage() {
                           </span>
                         </td>
                         <td className="px-4 py-4">
-                          <span className={`text-xs px-2.5 py-1 rounded-full border ${sub?.status === 'active' ? 'bg-[#10b981]/10 text-[#10b981] border-[#10b981]/20' : 'bg-red-500/10 text-red-300 border-red-500/20'}`}>
+                          <span
+                            className={`text-xs px-2.5 py-1 rounded-full border ${
+                              sub?.status === 'active'
+                                ? 'bg-[#10b981]/10 text-[#10b981] border-[#10b981]/20'
+                                : sub?.status === 'cancelled' && hasSubscriptionAccess(sub)
+                                  ? 'bg-yellow-500/10 text-yellow-200 border-yellow-500/20'
+                                  : 'bg-red-500/10 text-red-300 border-red-500/20'
+                            }`}
+                          >
                             {sub?.status || 'none'}
                           </span>
                         </td>
@@ -381,6 +432,80 @@ export default function AdminUsersPage() {
                   className="w-full rounded-xl bg-[#10b981] py-3 text-sm font-semibold text-[#0a0a0a] transition hover:bg-emerald-400 disabled:opacity-50"
                 >
                   {savingProfile ? 'Saving profile...' : 'Save Profile'}
+                </button>
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard
+            title="Subscription Manager"
+            icon={
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#10b981]" aria-hidden="true">
+                <rect width="20" height="14" x="2" y="5" rx="2" />
+                <line x1="2" x2="22" y1="10" y2="10" />
+              </svg>
+            }
+            action={<span className="text-xs text-zinc-500">{selectedUser ? 'billing access' : 'choose a user'}</span>}
+          >
+            {!selectedUser ? (
+              <div className="bg-[#0a0a0a] border border-dashed border-[#2a2a2a] rounded-xl px-5 py-8 text-center text-sm text-zinc-500">
+                Select a user to manage their plan, status, and renewal timing.
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div className="rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] p-4">
+                  <p className="text-sm font-medium text-zinc-100">
+                    Stripe link: {selectedUser.subscriptions?.[0]?.stripe_subscription_id ? 'connected' : 'manual record'}
+                  </p>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Use this for support/admin corrections. Stripe-backed subscriptions will still sync through webhooks.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium block mb-2">Plan</label>
+                    <select
+                      value={subscriptionForm.plan}
+                      onChange={(event) => setSubscriptionForm((current) => ({ ...current, plan: event.target.value }))}
+                      className="w-full rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] px-4 py-3 text-sm text-white outline-none transition focus:border-[#10b981] focus:ring-2 focus:ring-[#10b981]/20"
+                    >
+                      <option value="monthly">Monthly</option>
+                      <option value="yearly">Yearly</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium block mb-2">Status</label>
+                    <select
+                      value={subscriptionForm.status}
+                      onChange={(event) => setSubscriptionForm((current) => ({ ...current, status: event.target.value }))}
+                      className="w-full rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] px-4 py-3 text-sm text-white outline-none transition focus:border-[#10b981] focus:ring-2 focus:ring-[#10b981]/20"
+                    >
+                      <option value="active">Active</option>
+                      <option value="cancelled">Cancelled</option>
+                      <option value="lapsed">Lapsed</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium block mb-2">Renews On</label>
+                  <input
+                    type="date"
+                    value={subscriptionForm.renews_at}
+                    onChange={(event) => setSubscriptionForm((current) => ({ ...current, renews_at: event.target.value }))}
+                    className="w-full rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] px-4 py-3 text-sm text-white outline-none transition focus:border-[#10b981] focus:ring-2 focus:ring-[#10b981]/20"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void handleSubscriptionSave()}
+                  disabled={savingSubscription}
+                  className="w-full rounded-xl border border-[#1e1e1e] bg-[#141414] py-3 text-sm font-medium text-white transition hover:border-[#2a2a2a] disabled:opacity-50"
+                >
+                  {savingSubscription ? 'Saving subscription...' : 'Save Subscription'}
                 </button>
               </div>
             )}

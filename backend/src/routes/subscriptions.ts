@@ -4,6 +4,7 @@ import stripe from "../config/stripe.js";
 import supabase from "../config/supabase.js";
 import { authenticate, AuthRequest } from "../middleware/auth.js";
 import { notifyUser } from "../services/notifications.js";
+import { mapStripeSubscriptionStatus } from "../utils/subscriptions.js";
 
 const router = Router();
 
@@ -19,33 +20,13 @@ function getSubscriptionPeriodEnd(
   }, 0);
 }
 
-function mapStripeSubscriptionStatus(
-  status: Stripe.Subscription.Status,
-): "active" | "cancelled" | "lapsed" {
-  switch (status) {
-    case "active":
-    case "trialing":
-      return "active";
-    case "canceled":
-      return "cancelled";
-    case "past_due":
-    case "unpaid":
-    case "incomplete":
-    case "incomplete_expired":
-    case "paused":
-      return "lapsed";
-    default:
-      return "lapsed";
-  }
-}
-
 async function syncSubscriptionFromStripe(
   subscription: Stripe.Subscription,
 ): Promise<void> {
   const renewsAt = getSubscriptionPeriodEnd(subscription);
 
   const updatePayload: Record<string, unknown> = {
-    status: mapStripeSubscriptionStatus(subscription.status),
+    status: mapStripeSubscriptionStatus(subscription),
   };
 
   if (subscription.customer) {
@@ -267,7 +248,7 @@ router.post(
       await saveSubscriptionRecord({
         userId: req.user!.id,
         plan,
-        status: mapStripeSubscriptionStatus(stripeSub.status),
+        status: mapStripeSubscriptionStatus(stripeSub),
         customerId,
         subscriptionId,
         renewsAt: new Date(renewsAt * 1000).toISOString(),
@@ -326,42 +307,86 @@ router.get(
 );
 
 // POST /api/subscriptions/cancel
-// Cancel current subscription
+// Cancel current subscription at period end while keeping access until renewal
 router.post(
   "/cancel",
   authenticate,
   async (req: AuthRequest, res: Response): Promise<void> => {
-    const { data: sub } = await supabase
-      .from("subscriptions")
-      .select("stripe_subscription_id")
-      .eq("user_id", req.user!.id)
-      .eq("status", "active")
-      .single();
+    try {
+      const { data: sub, error: subscriptionError } = await supabase
+        .from("subscriptions")
+        .select("id, stripe_subscription_id, renews_at, status")
+        .eq("user_id", req.user!.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-    if (!sub) {
-      res
-        .status(404)
-        .json({ success: false, error: "No active subscription found" });
-      return;
+      if (subscriptionError) {
+        throw new Error(`Failed to load subscription: ${subscriptionError.message}`);
+      }
+
+      if (!sub?.stripe_subscription_id) {
+        res
+          .status(404)
+          .json({ success: false, error: "No active Stripe subscription found" });
+        return;
+      }
+
+      const stripeSubscription = await stripe.subscriptions.update(
+        sub.stripe_subscription_id,
+        {
+          cancel_at_period_end: true,
+        },
+      );
+
+      const renewsAt = getSubscriptionPeriodEnd(stripeSubscription);
+      const nextRenewsAt = renewsAt
+        ? new Date(renewsAt * 1000).toISOString()
+        : sub.renews_at;
+
+      const { data: updatedSubscription, error: updateError } = await supabase
+        .from("subscriptions")
+        .update({
+          status: "cancelled",
+          renews_at: nextRenewsAt,
+        })
+        .eq("id", sub.id)
+        .select("*")
+        .single();
+
+      if (updateError || !updatedSubscription) {
+        throw new Error(
+          updateError?.message ?? "Failed to update subscription cancellation state",
+        );
+      }
+
+      try {
+        await notifyUser({
+          userId: req.user!.id,
+          title: 'Subscription cancellation scheduled',
+          message: 'Your subscription will remain active until the current billing period ends.',
+          category: 'billing',
+          actionUrl: '/dashboard/subscription',
+          dedupeKey: `subscription-cancel-${sub.stripe_subscription_id}`,
+        });
+      } catch (notificationError) {
+        console.warn(
+          `[subscriptions cancel] notification failed: ${
+            notificationError instanceof Error ? notificationError.message : "Unknown error"
+          }`,
+        );
+      }
+
+      res.json({
+        success: true,
+        message: "Subscription cancelled at period end",
+        data: updatedSubscription,
+      });
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to cancel subscription";
+      res.status(500).json({ success: false, error: message });
     }
-
-    await stripe.subscriptions.update(sub.stripe_subscription_id, {
-      cancel_at_period_end: true,
-    });
-
-    await notifyUser({
-      userId: req.user!.id,
-      title: 'Subscription cancellation scheduled',
-      message: 'Your subscription will remain active until the current billing period ends.',
-      category: 'billing',
-      actionUrl: '/dashboard/subscription',
-      dedupeKey: `subscription-cancel-${sub.stripe_subscription_id}`,
-    });
-
-    res.json({
-      success: true,
-      message: "Subscription cancelled at period end",
-    });
   },
 );
 
@@ -418,7 +443,7 @@ router.post("/webhook", async (req: Request, res: Response): Promise<void> => {
       await saveSubscriptionRecord({
         userId,
         plan,
-        status: mapStripeSubscriptionStatus(stripeSub.status),
+        status: mapStripeSubscriptionStatus(stripeSub),
         customerId,
         subscriptionId,
         renewsAt: new Date(renewsAt * 1000).toISOString(),

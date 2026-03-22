@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import supabase from '../config/supabase.js';
+import { isSubscriptionCurrentlyActive } from '../utils/subscriptions.js';
 
 interface UserSubscription {
   status: string;
@@ -14,22 +15,6 @@ export interface AuthRequest extends Request {
     role: string;
   };
   subscription?: UserSubscription | null;
-}
-
-function isSubscriptionActive(subscription: UserSubscription | null | undefined): boolean {
-  if (!subscription) {
-    return false;
-  }
-
-  if (subscription.status !== 'active') {
-    return false;
-  }
-
-  if (!subscription.renews_at) {
-    return Boolean(subscription.stripe_subscription_id);
-  }
-
-  return new Date(subscription.renews_at).getTime() > Date.now();
 }
 
 export const authenticate = async (
@@ -96,7 +81,7 @@ export const requireActiveSubscription = (
   res: Response,
   next: NextFunction
 ): void => {
-  if (!isSubscriptionActive(req.subscription)) {
+  if (!isSubscriptionCurrentlyActive(req.subscription)) {
     res.status(402).json({
       success: false,
       error: 'Active subscription required',

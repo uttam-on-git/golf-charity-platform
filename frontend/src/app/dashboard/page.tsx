@@ -23,6 +23,18 @@ interface Draw {
   jackpot_rolled_over: boolean;
 }
 
+interface DrawEntry {
+  id: string;
+  created_at: string;
+  draws?: {
+    id: string;
+    month: string;
+    status: string;
+    jackpot_rolled_over: boolean;
+    prize_pool_total?: number;
+  } | null;
+}
+
 interface Winning {
   id: string;
   match_type: string;
@@ -34,6 +46,13 @@ interface Subscription {
   plan: string;
   status: string;
   renews_at: string;
+}
+
+function hasSubscriptionAccess(subscription: Subscription | null): boolean {
+  if (!subscription) return false;
+  if (!['active', 'cancelled'].includes(subscription.status)) return false;
+  if (!subscription.renews_at) return subscription.status === 'active';
+  return new Date(subscription.renews_at).getTime() > Date.now();
 }
 
 interface Charity {
@@ -102,6 +121,7 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const [scores, setScores] = useState<Score[]>([]);
   const [draws, setDraws] = useState<Draw[]>([]);
+  const [entries, setEntries] = useState<DrawEntry[]>([]);
   const [winnings, setWinnings] = useState<Winning[]>([]);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [selectedCharity, setSelectedCharity] = useState<Charity | null>(null);
@@ -116,9 +136,10 @@ export default function DashboardPage() {
       setError('');
 
       try {
-        const [scoresRes, drawsRes, winningsRes, subscriptionRes, profileRes] = await Promise.allSettled([
+        const [scoresRes, drawsRes, entriesRes, winningsRes, subscriptionRes, profileRes] = await Promise.allSettled([
           api.get('/scores'),
           api.get('/draws'),
+          api.get('/draws/me/entries'),
           api.get('/draws/me/winnings'),
           api.get('/subscriptions/me'),
           api.get('/auth/me'),
@@ -141,6 +162,7 @@ export default function DashboardPage() {
 
         const nextScores = getResultData<Score[]>(scoresRes, []);
         const nextDraws = getResultData<Draw[]>(drawsRes, []);
+        const nextEntries = getResultData<DrawEntry[]>(entriesRes, []);
         const nextWinnings = getResultData<Winning[]>(winningsRes, []);
         const nextSubscription = getResultData<Subscription | null>(subscriptionRes, null);
         const profile = getResultData<ProfileResponse | null>(profileRes, null);
@@ -158,6 +180,7 @@ export default function DashboardPage() {
 
         setScores(nextScores);
         setDraws(nextDraws);
+        setEntries(nextEntries);
         setWinnings(nextWinnings);
         setSubscription(nextSubscription);
         setProfileCharityName(profile?.charities?.name ?? null);
@@ -186,13 +209,22 @@ export default function DashboardPage() {
     [winnings],
   );
 
-  const nextDraw = useMemo(
-    () => draws.find((draw) => draw.status === 'draft') ?? draws[0] ?? null,
+  const latestPublishedDraw = useMemo(
+    () => draws[0] ?? null,
     [draws],
   );
 
   const recentScores = scores.slice(0, 3);
-  const activeStatus = subscription?.status === 'active';
+  const activeStatus = hasSubscriptionAccess(subscription);
+  const readyScoreSet = scores.length === 5;
+  const upcomingEntry = entries.find((entry) => entry.draws?.status === 'draft') ?? null;
+  const participationSuffix = upcomingEntry?.draws?.month
+    ? `Entered ${formatMonth(upcomingEntry.draws.month)}`
+    : activeStatus
+      ? readyScoreSet
+        ? 'Ready for next draw'
+        : `${scores.length}/5 scores stored`
+      : 'Subscription required';
   const contributionRate = selectedCharity ? `${contributionPercent}%` : 'Not set';
   const paidWinningsCount = winnings.filter((item) => item.payment_status === 'paid').length;
 
@@ -246,8 +278,8 @@ export default function DashboardPage() {
         />
         <StatCard
           label="Draws Entered"
-          value={String(draws.length)}
-          suffix={nextDraw ? `Latest ${formatMonth(nextDraw.month)}` : 'No draws yet'}
+          value={String(entries.length)}
+          suffix={participationSuffix}
           icon={
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
@@ -284,14 +316,14 @@ export default function DashboardPage() {
                 Latest Draw Snapshot
               </h2>
               <span className="text-[10px] md:text-xs font-semibold px-2.5 py-1 bg-[#1e1e1e] text-zinc-300 rounded-md tracking-wider uppercase border border-[#2a2a2a]">
-                {nextDraw ? formatMonth(nextDraw.month) : 'No draws'}
+                {latestPublishedDraw ? formatMonth(latestPublishedDraw.month) : 'No draws'}
               </span>
             </div>
 
-            {nextDraw ? (
+            {latestPublishedDraw ? (
               <>
                 <div className="flex gap-3 flex-wrap justify-center pb-4">
-                  {(nextDraw.winning_numbers?.length ? nextDraw.winning_numbers : ['-', '-', '-', '-', '-']).map((value, index) => (
+                  {(latestPublishedDraw.winning_numbers?.length ? latestPublishedDraw.winning_numbers : ['-', '-', '-', '-', '-']).map((value, index) => (
                     <div key={`${value}-${index}`} className="bg-[#0a0a0a] border border-[#1e1e1e] rounded-xl w-16 h-20 sm:w-20 sm:h-24 flex items-center justify-center shadow-inner">
                       <span className="text-3xl sm:text-5xl font-semibold text-zinc-100 font-mono tracking-tighter">
                         {value}
@@ -299,18 +331,18 @@ export default function DashboardPage() {
                     </div>
                   ))}
                 </div>
-                <div className="flex items-center justify-between gap-4 pt-2 border-t border-[#1e1e1e]">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium mb-1">Status</p>
-                    <p className="text-sm text-zinc-100 font-medium capitalize">{nextDraw.status}</p>
+                  <div className="flex items-center justify-between gap-4 pt-2 border-t border-[#1e1e1e]">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium mb-1">Status</p>
+                      <p className="text-sm text-zinc-100 font-medium capitalize">{latestPublishedDraw.status}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium mb-1">Jackpot</p>
+                      <p className="text-sm text-zinc-100 font-medium">
+                        {latestPublishedDraw.jackpot_rolled_over ? 'Rolled over' : 'Settled'}
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium mb-1">Jackpot</p>
-                    <p className="text-sm text-zinc-100 font-medium">
-                      {nextDraw.jackpot_rolled_over ? 'Rolled over' : 'Settled'}
-                    </p>
-                  </div>
-                </div>
               </>
             ) : (
               <div className="bg-[#0a0a0a] border border-dashed border-[#2a2a2a] rounded-xl px-5 py-8 text-center text-sm text-zinc-500">
