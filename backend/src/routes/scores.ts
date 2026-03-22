@@ -73,6 +73,54 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   res.status(201).json({ success: true, data });
 });
 
+// PATCH /api/scores/:id - update one of my stored scores
+router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { score, played_at } = req.body;
+
+  if (!score || score < 1 || score > 45) {
+    res.status(400).json({ success: false, error: 'Score must be between 1 and 45' });
+    return;
+  }
+
+  if (!played_at) {
+    res.status(400).json({ success: false, error: 'Date is required' });
+    return;
+  }
+
+  const { data: existing, error: fetchError } = await supabase
+    .from('golf_scores')
+    .select('id')
+    .eq('id', id)
+    .eq('user_id', req.user!.id)
+    .maybeSingle();
+
+  if (fetchError) {
+    res.status(500).json({ success: false, error: fetchError.message });
+    return;
+  }
+
+  if (!existing) {
+    res.status(404).json({ success: false, error: 'Score not found' });
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('golf_scores')
+    .update({ score, played_at })
+    .eq('id', id)
+    .eq('user_id', req.user!.id)
+    .select()
+    .single();
+
+  if (error || !data) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to update score' });
+    return;
+  }
+
+  res.json({ success: true, data });
+});
+
 // DELETE /api/scores/:id - delete a score
 router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;

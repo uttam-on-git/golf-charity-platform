@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import supabase from '../config/supabase.js';
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth.js';
-import { runDraw, calculatePrizes } from '../services/drawEngine.js';
+import { runDraw, calculatePrizes, calculatePrizePoolPreview, getEligibleDrawParticipants } from '../services/drawEngine.js';
 import { notifyUsers } from '../services/notifications.js';
 
 const router = Router();
@@ -31,6 +31,48 @@ router.get('/', async (_req, res) => {
     .select('*')
     .eq('status', 'published')
     .order('month', { ascending: false });
+
+  if (error) {
+    res.status(500).json({ success: false, error: error.message });
+    return;
+  }
+
+  res.json({ success: true, data });
+});
+
+// GET /api/draws/admin/all - get all draws including drafts (admin only)
+router.get('/admin/all', authenticate, requireAdmin, async (_req: AuthRequest, res: Response): Promise<void> => {
+  const { data, error } = await supabase
+    .from('draws')
+    .select('*')
+    .order('month', { ascending: false });
+
+  if (error) {
+    res.status(500).json({ success: false, error: error.message });
+    return;
+  }
+
+  res.json({ success: true, data });
+});
+
+// GET /api/draws/admin/pool-preview - get the current auto-calculated prize pool (admin only)
+router.get('/admin/pool-preview', authenticate, requireAdmin, async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const preview = await calculatePrizePoolPreview();
+    res.json({ success: true, data: preview });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to calculate prize pool preview';
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// GET /api/draws/me/entries - get my recorded draw entries
+router.get('/me/entries', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { data, error } = await supabase
+    .from('draw_entries')
+    .select('id, created_at, draws(id, month, status, jackpot_rolled_over, prize_pool_total)')
+    .eq('user_id', req.user!.id)
+    .order('created_at', { ascending: false });
 
   if (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -171,8 +213,18 @@ router.post(
     const month = new Date().toISOString().slice(0, 7); // e.g. "2026-03"
 
     try {
-      const result = await runDraw(mode, month);
-      res.json({ success: true, data: result, simulated: true });
+      const [result, prizePoolPreview] = await Promise.all([
+        runDraw(mode, month),
+        calculatePrizePoolPreview(),
+      ]);
+      res.json({
+        success: true,
+        data: {
+          ...result,
+          ...prizePoolPreview,
+        },
+        simulated: true,
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Draw simulation failed';
       res.status(500).json({ success: false, error: message });
@@ -186,7 +238,7 @@ router.post(
   authenticate,
   requireAdmin,
   async (req: AuthRequest, res: Response): Promise<void> => {
-    const { mode = 'random', prize_pool_total = 0 } = req.body;
+    const { mode = 'random' } = req.body;
     const month = new Date().toISOString().slice(0, 7);
 
     // Check draw doesn't already exist for this month
@@ -202,7 +254,11 @@ router.post(
     }
 
     try {
-      const result = await runDraw(mode, month);
+      const [result, prizePoolPreview, eligibleParticipants] = await Promise.all([
+        runDraw(mode, month),
+        calculatePrizePoolPreview(),
+        getEligibleDrawParticipants(),
+      ]);
 
       // Save draw as draft
       const { data: draw, error: drawError } = await supabase
@@ -212,7 +268,7 @@ router.post(
           winning_numbers: result.winning_numbers,
           status: 'draft',
           jackpot_rolled_over: result.jackpot_rolled_over,
-          prize_pool_total,
+          prize_pool_total: prizePoolPreview.prize_pool_total,
         })
         .select()
         .single();
@@ -220,6 +276,20 @@ router.post(
       if (drawError || !draw) {
         res.status(500).json({ success: false, error: 'Failed to save draw' });
         return;
+      }
+
+      if (eligibleParticipants.length > 0) {
+        const { error: entryError } = await supabase.from('draw_entries').insert(
+          eligibleParticipants.map((participant) => ({
+            draw_id: draw.id,
+            user_id: participant.user_id,
+          })),
+        );
+
+        if (entryError) {
+          res.status(500).json({ success: false, error: `Failed to save draw entries: ${entryError.message}` });
+          return;
+        }
       }
 
       // Save winners
@@ -233,10 +303,17 @@ router.post(
         );
 
         // Calculate prize amounts
-        await calculatePrizes(draw.id, prize_pool_total);
+        await calculatePrizes(draw.id, prizePoolPreview.prize_pool_total);
       }
 
-      res.json({ success: true, data: { draw, winners: result.winners } });
+      res.json({
+        success: true,
+        data: {
+          draw,
+          winners: result.winners,
+          prize_pool_preview: prizePoolPreview,
+        },
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Draw failed';
       res.status(500).json({ success: false, error: message });
@@ -268,19 +345,19 @@ router.post(
       year: 'numeric',
     });
 
-    const [{ data: activeSubscribers }, { data: winners }] = await Promise.all([
+    const [{ data: entries }, { data: winners }] = await Promise.all([
       supabase
-        .from('subscriptions')
+        .from('draw_entries')
         .select('user_id')
-        .eq('status', 'active'),
+        .eq('draw_id', data.id),
       supabase
         .from('winners')
         .select('user_id')
         .eq('draw_id', data.id),
     ]);
 
-    const subscriberNotifications = (activeSubscribers ?? []).map((subscription) => ({
-      userId: subscription.user_id,
+    const entrantNotifications = [...new Set((entries ?? []).map((entry) => entry.user_id))].map((userId) => ({
+      userId,
       title: `${monthLabel} draw results are live`,
       message: 'The latest winning numbers have been published. Check the draw history to see how your numbers matched.',
       category: 'draw_result' as const,
@@ -297,7 +374,7 @@ router.post(
       dedupeKey: `winner-alert-${data.id}`,
     }));
 
-    await notifyUsers([...subscriberNotifications, ...winnerNotifications]);
+    await notifyUsers([...entrantNotifications, ...winnerNotifications]);
 
     res.json({ success: true, data });
   }

@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import supabase from '../config/supabase.js';
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth.js';
 import { notifyUser } from '../services/notifications.js';
+import { isSubscriptionCurrentlyActive } from '../utils/subscriptions.js';
 
 const router = Router();
 
@@ -24,7 +25,7 @@ async function getAuthEmailMap() {
 router.get('/stats', async (_req, res) => {
   const [usersRes, subsRes, prizesRes, drawsRes, winnersRes, profilesRes] = await Promise.all([
     supabase.from('profiles').select('id', { count: 'exact' }),
-    supabase.from('subscriptions').select('id, plan').eq('status', 'active'),
+    supabase.from('subscriptions').select('id, plan, status, renews_at, stripe_subscription_id'),
     supabase.from('draws').select('prize_pool_total'),
     supabase.from('draws').select('id, status, month'),
     supabase.from('winners').select('id, payment_status, verification_status'),
@@ -35,7 +36,7 @@ router.get('/stats', async (_req, res) => {
     (sum, d) => sum + (d.prize_pool_total || 0), 0
   ) || 0;
 
-  const activeSubscriptions = subsRes.data ?? [];
+  const activeSubscriptions = (subsRes.data ?? []).filter((subscription) => isSubscriptionCurrentlyActive(subscription));
   const draws = drawsRes.data ?? [];
   const winners = winnersRes.data ?? [];
   const profiles = profilesRes.data ?? [];
@@ -91,7 +92,7 @@ router.get('/stats', async (_req, res) => {
 router.get('/users', async (_req, res) => {
   const { data, error } = await supabase
     .from('profiles')
-    .select('*, subscriptions(status, plan)')
+    .select('*, subscriptions(status, plan, renews_at, stripe_subscription_id)')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -149,6 +150,92 @@ router.patch('/users/:id', async (req, res) => {
     res.status(404).json({ success: false, error: error?.message || 'User not found' });
     return;
   }
+
+  res.json({ success: true, data });
+});
+
+// PATCH /api/admin/users/:id/subscription
+router.patch('/users/:id/subscription', async (req, res) => {
+  const { plan, status, renews_at } = req.body;
+
+  if (!plan || !['monthly', 'yearly'].includes(String(plan))) {
+    res.status(400).json({ success: false, error: 'Plan must be monthly or yearly' });
+    return;
+  }
+
+  if (!status || !['active', 'cancelled', 'lapsed'].includes(String(status))) {
+    res.status(400).json({ success: false, error: 'Status must be active, cancelled, or lapsed' });
+    return;
+  }
+
+  let nextRenewsAt: string | null = renews_at ? new Date(String(renews_at)).toISOString() : null;
+  if (renews_at && Number.isNaN(new Date(String(renews_at)).getTime())) {
+    res.status(400).json({ success: false, error: 'renews_at must be a valid date' });
+    return;
+  }
+
+  if (status === 'active' && !nextRenewsAt) {
+    const defaultRenewal = new Date();
+    defaultRenewal.setMonth(defaultRenewal.getMonth() + (plan === 'yearly' ? 12 : 1));
+    nextRenewsAt = defaultRenewal.toISOString();
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from('subscriptions')
+    .select('*')
+    .eq('user_id', req.params.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) {
+    res.status(500).json({ success: false, error: existingError.message });
+    return;
+  }
+
+  const payload = {
+    user_id: req.params.id,
+    plan: String(plan),
+    status: String(status),
+    renews_at: nextRenewsAt,
+    stripe_customer_id: existing?.stripe_customer_id ?? null,
+    stripe_subscription_id: existing?.stripe_subscription_id ?? null,
+  };
+
+  let data;
+  let error;
+
+  if (existing?.id) {
+    ({ data, error } = await supabase
+      .from('subscriptions')
+      .update(payload)
+      .eq('id', existing.id)
+      .select('*')
+      .single());
+  } else {
+    ({ data, error } = await supabase
+      .from('subscriptions')
+      .insert(payload)
+      .select('*')
+      .single());
+  }
+
+  if (error || !data) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to update subscription' });
+    return;
+  }
+
+  await notifyUser({
+    userId: req.params.id,
+    title: 'Subscription updated by admin',
+    message:
+      status === 'active'
+        ? `Your ${plan} membership has been activated and now renews on ${new Date(nextRenewsAt!).toLocaleDateString('en-GB')}.`
+        : `Your subscription status is now ${status}. Review your membership details in the subscription dashboard.`,
+    category: 'billing',
+    actionUrl: '/dashboard/subscription',
+    dedupeKey: `admin-subscription-${data.id}-${status}-${plan}-${nextRenewsAt ?? 'none'}`,
+  });
 
   res.json({ success: true, data });
 });
@@ -329,6 +416,111 @@ router.patch('/charities/:id', async (req, res) => {
   }
 
   res.json({ success: true, data });
+});
+
+// GET /api/admin/charities/:id/events
+router.get('/charities/:id/events', async (req, res) => {
+  const { data, error } = await supabase
+    .from('charity_events')
+    .select('*')
+    .eq('charity_id', req.params.id)
+    .order('event_date', { ascending: true });
+
+  if (error) {
+    res.status(500).json({ success: false, error: error.message });
+    return;
+  }
+
+  res.json({ success: true, data });
+});
+
+// POST /api/admin/charities/:id/events
+router.post('/charities/:id/events', async (req, res) => {
+  const { title, summary, event_date, location, signup_url, image_url, is_published } = req.body;
+
+  if (!title || !summary || !event_date) {
+    res.status(400).json({ success: false, error: 'title, summary, and event_date are required' });
+    return;
+  }
+
+  if (Number.isNaN(new Date(String(event_date)).getTime())) {
+    res.status(400).json({ success: false, error: 'event_date must be a valid date' });
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('charity_events')
+    .insert({
+      charity_id: req.params.id,
+      title: String(title).trim(),
+      summary: String(summary).trim(),
+      event_date: new Date(String(event_date)).toISOString(),
+      location: location ? String(location).trim() : null,
+      signup_url: signup_url ? String(signup_url).trim() : null,
+      image_url: image_url ? String(image_url).trim() : null,
+      is_published: is_published !== false,
+    })
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to create charity event' });
+    return;
+  }
+
+  res.status(201).json({ success: true, data });
+});
+
+// PATCH /api/admin/charity-events/:id
+router.patch('/charity-events/:id', async (req, res) => {
+  const { title, summary, event_date, location, signup_url, image_url, is_published } = req.body;
+
+  if (!title || !summary || !event_date) {
+    res.status(400).json({ success: false, error: 'title, summary, and event_date are required' });
+    return;
+  }
+
+  if (Number.isNaN(new Date(String(event_date)).getTime())) {
+    res.status(400).json({ success: false, error: 'event_date must be a valid date' });
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('charity_events')
+    .update({
+      title: String(title).trim(),
+      summary: String(summary).trim(),
+      event_date: new Date(String(event_date)).toISOString(),
+      location: location ? String(location).trim() : null,
+      signup_url: signup_url ? String(signup_url).trim() : null,
+      image_url: image_url ? String(image_url).trim() : null,
+      is_published: is_published !== false,
+    })
+    .eq('id', req.params.id)
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    res.status(404).json({ success: false, error: error?.message || 'Charity event not found' });
+    return;
+  }
+
+  res.json({ success: true, data });
+});
+
+// DELETE /api/admin/charity-events/:id
+router.delete('/charity-events/:id', async (req, res) => {
+  const { error } = await supabase
+    .from('charity_events')
+    .delete()
+    .eq('id', req.params.id);
+
+  if (error) {
+    res.status(500).json({ success: false, error: error.message });
+    return;
+  }
+
+  res.json({ success: true, message: 'Charity event deleted successfully' });
 });
 
 // DELETE /api/admin/charities/:id
