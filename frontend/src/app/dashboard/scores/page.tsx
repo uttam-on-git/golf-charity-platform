@@ -26,6 +26,7 @@ export default function ScoresPage() {
   const [scores, setScores] = useState<Score[]>([]);
   const [score, setScore] = useState('');
   const [playedAt, setPlayedAt] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [fetching, setFetching] = useState(true);
@@ -63,30 +64,52 @@ export default function ScoresPage() {
     void fetchScores();
   }, [fetchScores]);
 
-  const handleAdd = async (e: SyntheticEvent<HTMLFormElement>) => {
+  const resetForm = () => {
+    setScore('');
+    setPlayedAt('');
+    setEditingId(null);
+  };
+
+  const handleSubmit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      await api.post('/scores', {
+      const payload = {
         score: parseInt(score, 10),
         played_at: playedAt,
-      });
-      setScore('');
-      setPlayedAt('');
+      };
+
+      if (editingId) {
+        await api.patch(`/scores/${editingId}`, payload);
+      } else {
+        await api.post('/scores', payload);
+      }
+
+      resetForm();
       await fetchScores();
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Failed to add score'));
+      setError(getErrorMessage(err, editingId ? 'Failed to update score' : 'Failed to add score'));
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleEdit = (item: Score) => {
+    setEditingId(item.id);
+    setScore(String(item.score));
+    setPlayedAt(item.played_at?.slice(0, 10) ?? '');
+    setError('');
   };
 
   const handleDelete = async (id: string) => {
     setError('');
     try {
       await api.delete(`/scores/${id}`);
+      if (editingId === id) {
+        resetForm();
+      }
       await fetchScores();
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Failed to delete score'));
@@ -150,12 +173,23 @@ export default function ScoresPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-[1.05fr_1.2fr] gap-4 md:gap-6">
         <SectionCard
-          title="Add New Score"
+          title={editingId ? 'Edit Score' : 'Add New Score'}
           icon={
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#10b981]" aria-hidden="true">
               <path d="M12 5v14" />
               <path d="M5 12h14" />
             </svg>
+          }
+          action={
+            editingId ? (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="text-xs font-medium text-zinc-400 hover:text-white transition-colors"
+              >
+                Cancel edit
+              </button>
+            ) : null
           }
         >
           {error ? (
@@ -164,7 +198,7 @@ export default function ScoresPage() {
             </div>
           ) : null}
 
-          <form onSubmit={handleAdd} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium block mb-2">
                 Stableford Score
@@ -199,7 +233,7 @@ export default function ScoresPage() {
               disabled={loading}
               className="w-full bg-[#10b981] hover:bg-[#0fb172] disabled:opacity-50 text-[#0a0a0a] font-semibold rounded-xl py-3 text-sm transition-all"
             >
-              {loading ? 'Adding score...' : 'Add Score'}
+              {loading ? (editingId ? 'Saving score...' : 'Adding score...') : editingId ? 'Save Changes' : 'Add Score'}
             </button>
           </form>
         </SectionCard>
@@ -241,12 +275,22 @@ export default function ScoresPage() {
                       <p className="text-xs text-zinc-500 mt-0.5">{formatDate(item.played_at)}</p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    className="text-xs font-medium text-red-400 hover:text-red-300 transition-colors"
-                  >
-                    Remove
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(item)}
+                      className="text-xs font-medium text-zinc-300 hover:text-white transition-colors"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(item.id)}
+                      className="text-xs font-medium text-red-400 hover:text-red-300 transition-colors"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

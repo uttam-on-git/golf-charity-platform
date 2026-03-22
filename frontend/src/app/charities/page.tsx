@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -223,7 +224,15 @@ export default function PublicCharitiesPage() {
                 >
                   <div className="h-44 border-b border-white/[0.06] bg-linear-to-br from-[#151515] via-[#0d0d0d] to-[#070707] relative overflow-hidden">
                     {charity.image_url ? (
-                      <img src={charity.image_url} alt={charity.name} className="absolute inset-0 h-full w-full object-cover opacity-55" />
+                      <Image
+                        loader={({ src }) => src}
+                        unoptimized
+                        src={charity.image_url}
+                        alt={charity.name}
+                        fill
+                        sizes="(min-width: 1280px) 33vw, (min-width: 768px) 50vw, 100vw"
+                        className="object-cover opacity-55"
+                      />
                     ) : null}
                     <div className="absolute inset-0 bg-linear-to-t from-[#050505] via-[#050505]/40 to-transparent" />
                     <div className="absolute top-4 left-4 w-12 h-12 rounded-2xl bg-white/90 text-[#09110d] flex items-center justify-center font-bold">

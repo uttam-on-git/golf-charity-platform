@@ -9,6 +9,10 @@ interface DrawResult {
   winning_numbers: number[];
   winners: { user_id: string; match_type: string }[];
   jackpot_rolled_over: boolean;
+  active_contributors: number;
+  base_prize_pool_total: number;
+  jackpot_carry_in: number;
+  prize_pool_total: number;
 }
 
 interface Draw {
@@ -17,6 +21,14 @@ interface Draw {
   status: string;
   winning_numbers: number[];
   jackpot_rolled_over: boolean;
+  prize_pool_total: number;
+}
+
+interface PrizePoolPreview {
+  active_contributors: number;
+  base_prize_pool_total: number;
+  jackpot_carry_in: number;
+  prize_pool_total: number;
 }
 
 const matchLabel: Record<string, string> = {
@@ -34,23 +46,32 @@ function formatMonth(month: string) {
 
 export default function AdminDrawsPage() {
   const [mode, setMode] = useState<'random' | 'algorithmic'>('random');
-  const [prizePool, setPrizePool] = useState('');
   const [simulation, setSimulation] = useState<DrawResult | null>(null);
   const [draws, setDraws] = useState<Draw[]>([]);
+  const [prizePoolPreview, setPrizePoolPreview] = useState<PrizePoolPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    void fetchDraws();
+    void Promise.all([fetchDraws(), fetchPrizePoolPreview()]);
   }, []);
 
   const fetchDraws = async () => {
     try {
-      const res = await api.get('/draws');
+      const res = await api.get('/draws/admin/all');
       setDraws(res.data.data || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load draws');
+    }
+  };
+
+  const fetchPrizePoolPreview = async () => {
+    try {
+      const res = await api.get('/draws/admin/pool-preview');
+      setPrizePoolPreview((res.data?.data as PrizePoolPreview | null) ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load prize pool preview');
     }
   };
 
@@ -61,6 +82,7 @@ export default function AdminDrawsPage() {
     try {
       const res = await api.post('/draws/simulate', { mode });
       setSimulation(res.data.data);
+      setPrizePoolPreview((res.data?.data as DrawResult | null) ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Simulation failed');
     } finally {
@@ -73,11 +95,8 @@ export default function AdminDrawsPage() {
     setRunning(true);
     setError('');
     try {
-      await api.post('/draws/run', {
-        mode,
-        prize_pool_total: parseFloat(prizePool) || 0,
-      });
-      await fetchDraws();
+      await api.post('/draws/run', { mode });
+      await Promise.all([fetchDraws(), fetchPrizePoolPreview()]);
       setSimulation(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Draw run failed');
@@ -97,7 +116,8 @@ export default function AdminDrawsPage() {
   };
 
   const draftCount = useMemo(() => draws.filter((draw) => draw.status === 'draft').length, [draws]);
-  const publishedCount = useMemo(() => draws.filter((draw) => draw.status !== 'draft').length, [draws]);
+  const publishedCount = useMemo(() => draws.filter((draw) => draw.status === 'published').length, [draws]);
+  const livePoolTotal = prizePoolPreview?.prize_pool_total ?? 0;
 
   return (
     <div>
@@ -142,12 +162,12 @@ export default function AdminDrawsPage() {
           }
         />
         <StatCard
-          label="Published Draws"
-          value={String(publishedCount)}
-          suffix="visible to players"
+          label="Auto Prize Pool"
+          value={livePoolTotal.toFixed(2)}
+          suffix="current monthly total"
           icon={
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
             </svg>
           }
         />
@@ -181,14 +201,27 @@ export default function AdminDrawsPage() {
             </div>
 
             <div>
-              <label className="text-sm text-zinc-400 mb-2 block font-medium">Prize pool total</label>
-              <input
-                type="number"
-                value={prizePool}
-                onChange={(e) => setPrizePool(e.target.value)}
-                className="w-full rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] px-4 py-3 text-sm text-white outline-none transition focus:border-[#10b981] focus:ring-2 focus:ring-[#10b981]/20"
-                placeholder="e.g. 500"
-              />
+              <label className="text-sm text-zinc-400 mb-2 block font-medium">Prize pool source</label>
+              <div className="rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] p-4">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 mb-2">Active members</p>
+                    <p className="text-lg font-semibold text-white">{prizePoolPreview?.active_contributors ?? 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 mb-2">Base pool</p>
+                    <p className="text-lg font-semibold text-white">{(prizePoolPreview?.base_prize_pool_total ?? 0).toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 mb-2">Jackpot carry-in</p>
+                    <p className="text-lg font-semibold text-white">{(prizePoolPreview?.jackpot_carry_in ?? 0).toFixed(2)}</p>
+                  </div>
+                </div>
+                <div className="mt-4 rounded-lg border border-[#10b981]/20 bg-[#10b981]/10 px-4 py-3 flex items-center justify-between gap-4">
+                  <span className="text-sm text-zinc-200">Calculated draw total</span>
+                  <span className="text-xl font-semibold text-[#8ef0c6]">{livePoolTotal.toFixed(2)}</span>
+                </div>
+              </div>
             </div>
 
             <div className="flex gap-3">
@@ -240,6 +273,20 @@ export default function AdminDrawsPage() {
               </div>
 
               <div className="text-sm text-zinc-400">Projected winners: {simulation.winners.length}</div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-[#1e1e1e] bg-[#0f0f0f] px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 mb-2">Base pool</p>
+                  <p className="text-white font-semibold">{simulation.base_prize_pool_total.toFixed(2)}</p>
+                </div>
+                <div className="rounded-xl border border-[#1e1e1e] bg-[#0f0f0f] px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 mb-2">Carry-in</p>
+                  <p className="text-white font-semibold">{simulation.jackpot_carry_in.toFixed(2)}</p>
+                </div>
+                <div className="rounded-xl border border-[#1e1e1e] bg-[#0f0f0f] px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 mb-2">Total pool</p>
+                  <p className="text-white font-semibold">{simulation.prize_pool_total.toFixed(2)}</p>
+                </div>
+              </div>
 
               {simulation.winners.length > 0 ? (
                 <div className="space-y-2">
@@ -271,7 +318,7 @@ export default function AdminDrawsPage() {
               <path d="M3 10h18" />
             </svg>
           }
-          action={<span className="text-xs text-zinc-500">{draws.length} total</span>}
+          action={<span className="text-xs text-zinc-500">{draws.length} total / {publishedCount} published</span>}
         >
           {draws.length === 0 ? (
             <div className="bg-[#0a0a0a] border border-dashed border-[#2a2a2a] rounded-xl px-5 py-8 text-center text-sm text-zinc-500">
@@ -283,6 +330,7 @@ export default function AdminDrawsPage() {
                 <div key={draw.id} className="bg-[#0a0a0a] border border-[#1e1e1e] rounded-xl p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                   <div>
                     <p className="text-white font-medium">{formatMonth(draw.month)}</p>
+                    <p className="text-xs text-zinc-500 mt-1">Prize pool {draw.prize_pool_total?.toFixed(2) ?? '0.00'}</p>
                     <div className="flex gap-1.5 mt-3 flex-wrap">
                       {draw.winning_numbers?.map((number) => (
                         <div key={number} className="w-8 h-8 rounded-full bg-[#10b981] text-[#0a0a0a] text-xs font-bold flex items-center justify-center">

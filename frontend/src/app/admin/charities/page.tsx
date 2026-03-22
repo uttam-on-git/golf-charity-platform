@@ -14,6 +14,18 @@ interface Charity {
   is_featured: boolean;
 }
 
+interface CharityEvent {
+  id: string;
+  charity_id: string;
+  title: string;
+  summary: string;
+  event_date: string;
+  location?: string | null;
+  signup_url?: string | null;
+  image_url?: string | null;
+  is_published: boolean;
+}
+
 const emptyForm = {
   name: '',
   description: '',
@@ -21,13 +33,47 @@ const emptyForm = {
   is_featured: false,
 };
 
+const emptyEventForm = {
+  title: '',
+  summary: '',
+  event_date: '',
+  location: '',
+  signup_url: '',
+  image_url: '',
+  is_published: true,
+};
+
+function extractErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === 'object' && error && 'response' in error) {
+    const response = (error as { response?: { data?: { error?: string } } }).response;
+    if (response?.data?.error) {
+      return response.data.error;
+    }
+  }
+
+  return error instanceof Error ? error.message : fallback;
+}
+
+function toDateTimeInput(value?: string | null) {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
 export default function AdminCharitiesPage() {
   const [charities, setCharities] = useState<Charity[]>([]);
+  const [events, setEvents] = useState<CharityEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventSaving, setEventSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [eventForm, setEventForm] = useState(emptyEventForm);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
@@ -42,15 +88,31 @@ export default function AdminCharitiesPage() {
       const res = await api.get('/admin/charities');
       setCharities(Array.isArray(res.data?.data) ? res.data.data : []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load charities');
+      setError(extractErrorMessage(err, 'Failed to load charities'));
     } finally {
       setLoading(false);
     }
   };
 
+  const fetchEvents = async (charityId: string) => {
+    setEventsLoading(true);
+    try {
+      const res = await api.get(`/admin/charities/${charityId}/events`);
+      setEvents(Array.isArray(res.data?.data) ? res.data.data : []);
+    } catch (err) {
+      setError(extractErrorMessage(err, 'Failed to load charity events'));
+      setEvents([]);
+    } finally {
+      setEventsLoading(false);
+    }
+  };
+
   const resetForm = () => {
     setEditingId(null);
+    setEditingEventId(null);
     setForm(emptyForm);
+    setEventForm(emptyEventForm);
+    setEvents([]);
   };
 
   const handleSubmit = async () => {
@@ -75,7 +137,7 @@ export default function AdminCharitiesPage() {
       resetForm();
       await fetchCharities();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save charity');
+      setError(extractErrorMessage(err, 'Failed to save charity'));
     } finally {
       setSaving(false);
     }
@@ -83,6 +145,7 @@ export default function AdminCharitiesPage() {
 
   const handleEdit = (charity: Charity) => {
     setEditingId(charity.id);
+    setEditingEventId(null);
     setMessage('');
     setError('');
     setForm({
@@ -91,6 +154,7 @@ export default function AdminCharitiesPage() {
       image_url: charity.image_url ?? '',
       is_featured: charity.is_featured,
     });
+    void fetchEvents(charity.id);
   };
 
   const handleDelete = async (charity: Charity) => {
@@ -108,9 +172,81 @@ export default function AdminCharitiesPage() {
       setMessage('Charity deleted successfully.');
       await fetchCharities();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete charity');
+      setError(extractErrorMessage(err, 'Failed to delete charity'));
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleEventSubmit = async () => {
+    if (!editingId) {
+      setError('Choose a charity to manage events.');
+      return;
+    }
+
+    if (!eventForm.title.trim() || !eventForm.summary.trim() || !eventForm.event_date) {
+      setError('Event title, summary, and date are required.');
+      return;
+    }
+
+    setEventSaving(true);
+    setError('');
+    setMessage('');
+
+    try {
+      if (editingEventId) {
+        await api.patch(`/admin/charity-events/${editingEventId}`, eventForm);
+        setMessage('Charity event updated successfully.');
+      } else {
+        await api.post(`/admin/charities/${editingId}/events`, eventForm);
+        setMessage('Charity event created successfully.');
+      }
+
+      setEditingEventId(null);
+      setEventForm(emptyEventForm);
+      await fetchEvents(editingId);
+    } catch (err) {
+      setError(extractErrorMessage(err, 'Failed to save charity event'));
+    } finally {
+      setEventSaving(false);
+    }
+  };
+
+  const handleEditEvent = (eventItem: CharityEvent) => {
+    setEditingEventId(eventItem.id);
+    setEventForm({
+      title: eventItem.title,
+      summary: eventItem.summary,
+      event_date: toDateTimeInput(eventItem.event_date),
+      location: eventItem.location ?? '',
+      signup_url: eventItem.signup_url ?? '',
+      image_url: eventItem.image_url ?? '',
+      is_published: eventItem.is_published,
+    });
+  };
+
+  const handleDeleteEvent = async (eventItem: CharityEvent) => {
+    if (!confirm(`Delete event "${eventItem.title}"?`)) return;
+
+    setDeletingEventId(eventItem.id);
+    setError('');
+    setMessage('');
+
+    try {
+      await api.delete(`/admin/charity-events/${eventItem.id}`);
+      if (editingEventId === eventItem.id) {
+        setEditingEventId(null);
+        setEventForm(emptyEventForm);
+      }
+
+      if (editingId) {
+        await fetchEvents(editingId);
+      }
+      setMessage('Charity event deleted successfully.');
+    } catch (err) {
+      setError(extractErrorMessage(err, 'Failed to delete charity event'));
+    } finally {
+      setDeletingEventId(null);
     }
   };
 
@@ -304,6 +440,188 @@ export default function AdminCharitiesPage() {
                   </div>
                 </article>
               ))}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      <div className="mt-4 md:mt-6">
+        <SectionCard
+          title="Charity Events"
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#10b981]" aria-hidden="true">
+              <path d="M8 2v4" />
+              <path d="M16 2v4" />
+              <rect x="3" y="4" width="18" height="18" rx="2" />
+              <path d="M3 10h18" />
+            </svg>
+          }
+          action={
+            editingId ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingEventId(null);
+                  setEventForm(emptyEventForm);
+                }}
+                className="text-xs font-medium text-zinc-400 hover:text-white transition-colors"
+              >
+                {editingEventId ? 'Cancel event edit' : 'New event'}
+              </button>
+            ) : (
+              <span className="text-xs text-zinc-500">Select a charity first</span>
+            )
+          }
+        >
+          {!editingId ? (
+            <div className="rounded-xl border border-dashed border-[#2a2a2a] bg-[#0a0a0a] px-5 py-8 text-center text-sm text-zinc-500">
+              Pick a charity from the catalogue to manage its public events and campaign moments.
+            </div>
+          ) : (
+            <div className="grid gap-5 xl:grid-cols-[0.92fr_1.08fr]">
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium block mb-2">Event Title</label>
+                  <input
+                    type="text"
+                    value={eventForm.title}
+                    onChange={(event) => setEventForm((current) => ({ ...current, title: event.target.value }))}
+                    className="w-full rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] px-4 py-3 text-sm text-white outline-none transition focus:border-[#10b981] focus:ring-2 focus:ring-[#10b981]/20"
+                    placeholder="Spring charity golf day"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium block mb-2">Summary</label>
+                  <textarea
+                    value={eventForm.summary}
+                    onChange={(event) => setEventForm((current) => ({ ...current, summary: event.target.value }))}
+                    rows={4}
+                    className="w-full rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] px-4 py-3 text-sm text-white outline-none transition focus:border-[#10b981] focus:ring-2 focus:ring-[#10b981]/20 resize-none"
+                    placeholder="What the event is, who it is for, and why it matters."
+                  />
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium block mb-2">Date & Time</label>
+                    <input
+                      type="datetime-local"
+                      value={eventForm.event_date}
+                      onChange={(event) => setEventForm((current) => ({ ...current, event_date: event.target.value }))}
+                      className="w-full rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] px-4 py-3 text-sm text-white outline-none transition focus:border-[#10b981] focus:ring-2 focus:ring-[#10b981]/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium block mb-2">Location</label>
+                    <input
+                      type="text"
+                      value={eventForm.location}
+                      onChange={(event) => setEventForm((current) => ({ ...current, location: event.target.value }))}
+                      className="w-full rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] px-4 py-3 text-sm text-white outline-none transition focus:border-[#10b981] focus:ring-2 focus:ring-[#10b981]/20"
+                      placeholder="London, UK"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium block mb-2">Signup URL</label>
+                    <input
+                      type="url"
+                      value={eventForm.signup_url}
+                      onChange={(event) => setEventForm((current) => ({ ...current, signup_url: event.target.value }))}
+                      className="w-full rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] px-4 py-3 text-sm text-white outline-none transition focus:border-[#10b981] focus:ring-2 focus:ring-[#10b981]/20"
+                      placeholder="https://charity.org/event"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-medium block mb-2">Image URL</label>
+                    <input
+                      type="url"
+                      value={eventForm.image_url}
+                      onChange={(event) => setEventForm((current) => ({ ...current, image_url: event.target.value }))}
+                      className="w-full rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] px-4 py-3 text-sm text-white outline-none transition focus:border-[#10b981] focus:ring-2 focus:ring-[#10b981]/20"
+                      placeholder="https://images.example.com/event.jpg"
+                    />
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-3 rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] px-4 py-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={eventForm.is_published}
+                    onChange={(event) => setEventForm((current) => ({ ...current, is_published: event.target.checked }))}
+                    className="size-4 accent-[#10b981]"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-zinc-100">Publish event publicly</p>
+                    <p className="text-xs text-zinc-500 mt-1">Turn this off to keep the event hidden while you prepare the content.</p>
+                  </div>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => void handleEventSubmit()}
+                  disabled={eventSaving}
+                  className="w-full rounded-xl bg-[#10b981] py-3 text-sm font-semibold text-[#0a0a0a] transition hover:bg-emerald-400 disabled:opacity-50"
+                >
+                  {eventSaving ? 'Saving event...' : editingEventId ? 'Update Event' : 'Create Event'}
+                </button>
+              </div>
+
+              <div>
+                {eventsLoading ? (
+                  <ListSkeleton rows={4} />
+                ) : events.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-[#2a2a2a] bg-[#0a0a0a] px-5 py-8 text-center text-sm text-zinc-500">
+                    No events yet for this charity.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {events.map((eventItem) => (
+                      <article key={eventItem.id} className="rounded-xl border border-[#1e1e1e] bg-[#0a0a0a] p-5">
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div>
+                            <h3 className="text-white font-medium leading-snug">{eventItem.title}</h3>
+                            <p className="text-xs text-zinc-500 mt-1">
+                              {new Date(eventItem.event_date).toLocaleString('en-GB')}
+                              {eventItem.location ? ` · ${eventItem.location}` : ''}
+                            </p>
+                          </div>
+                          <span
+                            className={`text-[11px] px-2 py-0.5 rounded-full border whitespace-nowrap ${
+                              eventItem.is_published
+                                ? 'border-[#10b981]/20 bg-[#10b981]/10 text-[#10b981]'
+                                : 'border-zinc-700 bg-zinc-800 text-zinc-400'
+                            }`}
+                          >
+                            {eventItem.is_published ? 'Published' : 'Hidden'}
+                          </span>
+                        </div>
+                        <p className="text-sm text-zinc-500 leading-relaxed mb-4">{eventItem.summary}</p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleEditEvent(eventItem)}
+                            className="rounded-lg border border-[#1e1e1e] bg-[#141414] px-3 py-2 text-xs font-medium text-white transition hover:border-[#2a2a2a]"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteEvent(eventItem)}
+                            disabled={deletingEventId === eventItem.id}
+                            className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 transition hover:bg-red-500/15 disabled:opacity-50"
+                          >
+                            {deletingEventId === eventItem.id ? 'Deleting...' : 'Delete'}
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </SectionCard>
