@@ -3,6 +3,7 @@ import { PostgrestError } from '@supabase/supabase-js';
 
 import supabase from '../config/supabase.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
+import { notifyUser } from '../services/notifications.js';
 
 const router = Router();
 
@@ -91,6 +92,34 @@ router.post('/read-all', async (req: AuthRequest, res: Response): Promise<void> 
   }
 
   res.json({ success: true, message: 'Notifications marked as read' });
+});
+
+router.post('/test', async (req: AuthRequest, res: Response): Promise<void> => {
+  const allowInProduction = req.user?.role === 'admin';
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  if (isProduction && !allowInProduction) {
+    res.status(403).json({ success: false, error: 'Admin access required for notification test trigger' });
+    return;
+  }
+
+  try {
+    await notifyUser({
+      userId: req.user!.id,
+      title: 'Notification test successful',
+      message: 'This test notification confirms the backend write path and dashboard feed are working.',
+      category: 'system',
+      actionUrl: '/dashboard/notifications',
+      dedupeKey: `notification-test-${req.user!.id}-${Date.now()}`,
+    });
+
+    res.status(201).json({ success: true, message: 'Test notification created' });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create test notification',
+    });
+  }
 });
 
 export default router;

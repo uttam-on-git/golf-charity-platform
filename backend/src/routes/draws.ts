@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import supabase from '../config/supabase.js';
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth.js';
 import { runDraw, calculatePrizes, calculatePrizePoolPreview, getEligibleDrawParticipants } from '../services/drawEngine.js';
-import { notifyUsers } from '../services/notifications.js';
+import { tryNotifyUsers } from '../services/notifications.js';
 
 const router = Router();
 const WINNER_PROOF_BUCKET = 'winner-proofs';
@@ -374,7 +374,7 @@ router.post(
       dedupeKey: `winner-alert-${data.id}`,
     }));
 
-    await notifyUsers([...entrantNotifications, ...winnerNotifications]);
+    await tryNotifyUsers([...entrantNotifications, ...winnerNotifications]);
 
     res.json({ success: true, data });
   }

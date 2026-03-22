@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import supabase from '../config/supabase.js';
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth.js';
-import { notifyUser } from '../services/notifications.js';
+import { tryNotifyUser } from '../services/notifications.js';
 import { isSubscriptionCurrentlyActive } from '../utils/subscriptions.js';
 
 const router = Router();
@@ -225,7 +225,7 @@ router.patch('/users/:id/subscription', async (req, res) => {
     return;
   }
 
-  await notifyUser({
+  await tryNotifyUser({
     userId: req.params.id,
     title: 'Subscription updated by admin',
     message:
@@ -600,7 +600,7 @@ router.patch('/winners/:id/verify', async (req: AuthRequest, res: Response): Pro
 
   if (data.user_id) {
     if (nextVerificationStatus === 'approved') {
-      await notifyUser({
+      await tryNotifyUser({
         userId: data.user_id,
         title: 'Winner proof approved',
         message: 'Your winner proof has been approved. We will keep you posted as payout status changes.',
@@ -611,7 +611,7 @@ router.patch('/winners/:id/verify', async (req: AuthRequest, res: Response): Pro
     }
 
     if (nextVerificationStatus === 'rejected') {
-      await notifyUser({
+      await tryNotifyUser({
         userId: data.user_id,
         title: 'Winner proof needs attention',
         message: verification_notes ?? 'Your uploaded proof was rejected. Please review the note and upload a clearer screenshot.',
@@ -622,7 +622,7 @@ router.patch('/winners/:id/verify', async (req: AuthRequest, res: Response): Pro
     }
 
     if (payment_status === 'paid') {
-      await notifyUser({
+      await tryNotifyUser({
         userId: data.user_id,
         title: 'Prize payout completed',
         message: 'Your winning payout has been marked as paid. Thanks for playing and supporting charity.',

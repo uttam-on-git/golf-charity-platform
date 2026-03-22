@@ -3,7 +3,7 @@ import Stripe from "stripe";
 import stripe from "../config/stripe.js";
 import supabase from "../config/supabase.js";
 import { authenticate, AuthRequest } from "../middleware/auth.js";
-import { notifyUser } from "../services/notifications.js";
+import { tryNotifyUser } from "../services/notifications.js";
 import { mapStripeSubscriptionStatus } from "../utils/subscriptions.js";
 
 const router = Router();
@@ -254,7 +254,7 @@ router.post(
         renewsAt: new Date(renewsAt * 1000).toISOString(),
       });
 
-      await notifyUser({
+      await tryNotifyUser({
         userId: req.user!.id,
         title: 'Subscription confirmed',
         message: `Your ${plan} membership is active and your dashboard benefits are unlocked.`,
@@ -361,7 +361,7 @@ router.post(
       }
 
       try {
-        await notifyUser({
+        await tryNotifyUser({
           userId: req.user!.id,
           title: 'Subscription cancellation scheduled',
           message: 'Your subscription will remain active until the current billing period ends.',
@@ -449,7 +449,7 @@ router.post("/webhook", async (req: Request, res: Response): Promise<void> => {
         renewsAt: new Date(renewsAt * 1000).toISOString(),
       });
 
-      await notifyUser({
+      await tryNotifyUser({
         userId,
         title: 'Subscription confirmed',
         message: `Your ${plan} membership is active and your dashboard benefits are unlocked.`,
@@ -497,7 +497,7 @@ router.post("/webhook", async (req: Request, res: Response): Promise<void> => {
         }
 
         if (subscriptionRow?.user_id) {
-          await notifyUser({
+          await tryNotifyUser({
             userId: subscriptionRow.user_id,
             title: 'Subscription payment failed',
             message: 'We could not renew your membership. Please update billing details to restore full access.',

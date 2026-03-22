@@ -1,10 +1,11 @@
 'use client';
 
 import axios from 'axios';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { SectionCard, StatCard } from '@/components/dashboard/overview-primitives';
 import { DashboardPageLoader } from '@/components/loading/LoadingUI';
+import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/axios';
 
 interface NotificationItem {
@@ -35,18 +36,27 @@ const categoryTone: Record<NotificationItem['category'], string> = {
 };
 
 export default function DashboardNotificationsPage() {
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [markingAll, setMarkingAll] = useState(false);
+  const [sendingTest, setSendingTest] = useState(false);
   const [error, setError] = useState('');
 
-  const fetchNotifications = async () => {
+  const syncUnreadBadge = (items: NotificationItem[]) => {
+    const unreadCount = items.filter((notification) => !notification.read_at).length;
+    window.dispatchEvent(new CustomEvent('gc:notifications-updated', { detail: { unreadCount } }));
+  };
+
+  const fetchNotifications = useCallback(async () => {
     setLoading(true);
     setError('');
 
     try {
       const res = await api.get('/notifications');
-      setNotifications(Array.isArray(res.data?.data) ? res.data.data : []);
+      const nextNotifications = Array.isArray(res.data?.data) ? res.data.data : [];
+      setNotifications(nextNotifications);
+      syncUnreadBadge(nextNotifications);
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(err.response?.data?.error || 'Notifications are temporarily unavailable');
@@ -56,11 +66,11 @@ export default function DashboardNotificationsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void fetchNotifications();
-  }, []);
+  }, [fetchNotifications]);
 
   const unreadCount = useMemo(
     () => notifications.filter((notification) => !notification.read_at).length,
@@ -75,11 +85,13 @@ export default function DashboardNotificationsPage() {
   const handleMarkRead = async (notificationId: string) => {
     try {
       await api.patch(`/notifications/${notificationId}/read`);
-      setNotifications((current) =>
-        current.map((item) =>
+      setNotifications((current) => {
+        const nextNotifications = current.map((item) =>
           item.id === notificationId ? { ...item, read_at: new Date().toISOString() } : item,
-        ),
-      );
+        );
+        syncUnreadBadge(nextNotifications);
+        return nextNotifications;
+      });
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(err.response?.data?.error || 'Could not update this notification right now');
@@ -96,7 +108,11 @@ export default function DashboardNotificationsPage() {
     try {
       await api.post('/notifications/read-all');
       const now = new Date().toISOString();
-      setNotifications((current) => current.map((item) => ({ ...item, read_at: item.read_at ?? now })));
+      setNotifications((current) => {
+        const nextNotifications = current.map((item) => ({ ...item, read_at: item.read_at ?? now }));
+        syncUnreadBadge(nextNotifications);
+        return nextNotifications;
+      });
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(err.response?.data?.error || 'Could not mark notifications as read right now');
@@ -105,6 +121,24 @@ export default function DashboardNotificationsPage() {
       }
     } finally {
       setMarkingAll(false);
+    }
+  };
+
+  const handleSendTestNotification = async () => {
+    setSendingTest(true);
+    setError('');
+
+    try {
+      await api.post('/notifications/test');
+      await fetchNotifications();
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.error || 'Could not create a test notification right now');
+      } else {
+        setError('Could not create a test notification right now');
+      }
+    } finally {
+      setSendingTest(false);
     }
   };
 
@@ -177,16 +211,28 @@ export default function DashboardNotificationsPage() {
           </svg>
         }
         action={
-          notifications.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => void handleReadAll()}
-              disabled={markingAll || unreadCount === 0}
-              className="text-xs font-medium text-zinc-400 hover:text-white transition-colors disabled:opacity-50"
-            >
-              {markingAll ? 'Marking...' : 'Mark all read'}
-            </button>
-          ) : null
+          <div className="flex flex-wrap items-center gap-2">
+            {user?.role === 'admin' ? (
+              <button
+                type="button"
+                onClick={() => void handleSendTestNotification()}
+                disabled={sendingTest}
+                className="rounded-lg border border-[#1e1e1e] bg-[#141414] px-3 py-2 text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-300 transition hover:border-[#2a2a2a] hover:text-white disabled:opacity-50"
+              >
+                {sendingTest ? 'Sending...' : 'Send Test'}
+              </button>
+            ) : null}
+            {notifications.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => void handleReadAll()}
+                disabled={markingAll || unreadCount === 0}
+                className="text-xs font-medium text-zinc-400 hover:text-white transition-colors disabled:opacity-50"
+              >
+                {markingAll ? 'Marking...' : 'Mark all read'}
+              </button>
+            ) : null}
+          </div>
         }
       >
         {notifications.length === 0 ? (

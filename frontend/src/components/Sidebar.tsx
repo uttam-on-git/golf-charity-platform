@@ -1,10 +1,12 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import Logo from '@/components/Logo';
 import { useAuth } from '@/context/AuthContext';
+import api from '@/lib/axios';
 
 type NavItem = {
   label: string;
@@ -111,8 +113,47 @@ function getInitials(email?: string | null, fullName?: string | null) {
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const [unreadCount, setUnreadCount] = useState(0);
   const initials = getInitials(user?.email, user?.full_name);
   const memberLabel = user?.role === 'admin' ? 'Administrator' : 'Founding Member';
+
+  useEffect(() => {
+    let active = true;
+
+    const syncUnreadCount = async () => {
+      try {
+        const res = await api.get('/notifications');
+        if (!active) return;
+        setUnreadCount(Number(res.data?.unread_count ?? 0));
+      } catch {
+        if (!active) return;
+        setUnreadCount(0);
+      }
+    };
+
+    const handleNotificationsUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ unreadCount?: number }>;
+      if (typeof customEvent.detail?.unreadCount === 'number') {
+        setUnreadCount(customEvent.detail.unreadCount);
+        return;
+      }
+
+      void syncUnreadCount();
+    };
+
+    void syncUnreadCount();
+    const interval = window.setInterval(() => {
+      void syncUnreadCount();
+    }, 30000);
+
+    window.addEventListener('gc:notifications-updated', handleNotificationsUpdated as EventListener);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener('gc:notifications-updated', handleNotificationsUpdated as EventListener);
+    };
+  }, []);
 
   return (
     <>
@@ -130,6 +171,7 @@ export default function Sidebar() {
         <nav className="flex-1 py-8 flex flex-col gap-1.5 overflow-y-auto">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
+            const isNotifications = item.href === '/dashboard/notifications';
 
             return (
               <Link
@@ -150,7 +192,11 @@ export default function Sidebar() {
                 />
                 <span className={`size-5 ${isActive ? 'text-[#10b981]' : ''}`}>{item.icon}</span>
                 <span className="font-medium text-sm">{item.label}</span>
-                {item.badge ? (
+                {isNotifications && unreadCount > 0 ? (
+                  <span className="ml-auto min-w-5 rounded-full bg-[#10b981] px-1.5 py-0.5 text-center text-[10px] font-bold text-[#04110c]">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                ) : item.badge ? (
                   <span className="ml-auto bg-[#1e1e1e] text-zinc-300 text-[10px] font-bold px-2 py-0.5 rounded-full">
                     {item.badge}
                   </span>
@@ -188,6 +234,7 @@ export default function Sidebar() {
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           const isProfile = item.href === '/dashboard/subscription';
+          const isNotifications = item.href === '/dashboard/notifications';
 
           return (
             <Link
@@ -197,7 +244,7 @@ export default function Sidebar() {
                 isActive ? 'text-[#10b981]' : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
-              {item.showMobileDot && !isActive ? (
+              {((item.showMobileDot && !isActive) || (isNotifications && unreadCount > 0 && !isActive)) ? (
                 <div className="absolute top-1 right-2 w-2 h-2 bg-[#10b981] rounded-full" />
               ) : null}
               {isProfile ? (

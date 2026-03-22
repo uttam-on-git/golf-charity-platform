@@ -14,5 +14,4 @@ create index if not exists notifications_user_created_idx
 on public.notifications (user_id, created_at desc);
 
 create unique index if not exists notifications_user_dedupe_idx
-on public.notifications (user_id, dedupe_key)
-where dedupe_key is not null;
+on public.notifications (user_id, dedupe_key);
