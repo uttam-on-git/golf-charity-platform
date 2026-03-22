@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { SectionCard, StatCard } from '@/components/dashboard/overview-primitives';
 import { ListSkeleton } from '@/components/loading/LoadingUI';
@@ -60,32 +60,19 @@ export default function AdminUsersPage() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
-  useEffect(() => {
-    void fetchUsers();
+  const fetchScores = useCallback(async (userId: string) => {
+    setScoresLoading(true);
+    try {
+      const res = await api.get(`/admin/users/${userId}/scores`);
+      setScores(Array.isArray(res.data?.data) ? res.data.data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load user scores');
+    } finally {
+      setScoresLoading(false);
+    }
   }, []);
 
-  const fetchUsers = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const res = await api.get('/admin/users');
-      const nextUsers = Array.isArray(res.data?.data) ? res.data.data : [];
-      setUsers(nextUsers);
-      setSelectedUserId((current) => {
-        if (current && nextUsers.some((user: User) => user.id === current)) {
-          return current;
-        }
-        return nextUsers[0]?.id ?? null;
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load users');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    const selectedUser = users.find((user) => user.id === selectedUserId);
+  const applySelectedUser = useCallback((selectedUser: User | null) => {
     if (!selectedUser) {
       setProfileForm(emptyProfileForm);
       setSubscriptionForm(emptySubscriptionForm);
@@ -105,19 +92,32 @@ export default function AdminUsersPage() {
     });
 
     void fetchScores(selectedUser.id);
-  }, [selectedUserId, users]);
+  }, [fetchScores]);
 
-  const fetchScores = async (userId: string) => {
-    setScoresLoading(true);
+  const fetchUsers = useCallback(async () => {
+    setLoading(true);
+    setError('');
     try {
-      const res = await api.get(`/admin/users/${userId}/scores`);
-      setScores(Array.isArray(res.data?.data) ? res.data.data : []);
+      const res = await api.get('/admin/users');
+      const nextUsers = Array.isArray(res.data?.data) ? res.data.data : [];
+      const nextSelectedUserId =
+        selectedUserId && nextUsers.some((user: User) => user.id === selectedUserId)
+          ? selectedUserId
+          : nextUsers[0]?.id ?? null;
+
+      setUsers(nextUsers);
+      setSelectedUserId(nextSelectedUserId);
+      applySelectedUser(nextUsers.find((user: User) => user.id === nextSelectedUserId) ?? null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load user scores');
+      setError(err instanceof Error ? err.message : 'Failed to load users');
     } finally {
-      setScoresLoading(false);
+      setLoading(false);
     }
-  };
+  }, [applySelectedUser, selectedUserId]);
+
+  useEffect(() => {
+    void fetchUsers();
+  }, [fetchUsers]);
 
   const resetScoreForm = () => {
     setEditingScoreId(null);
@@ -224,7 +224,9 @@ export default function AdminUsersPage() {
   const adminCount = useMemo(() => users.filter((user) => user.role === 'admin').length, [users]);
   const selectedUser = users.find((user) => user.id === selectedUserId) ?? null;
   const handleSelectUser = (userId: string) => {
+    const nextSelectedUser = users.find((user) => user.id === userId) ?? null;
     setSelectedUserId(userId);
+    applySelectedUser(nextSelectedUser);
     setMessage('');
     setError('');
   };

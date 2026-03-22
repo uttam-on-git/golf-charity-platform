@@ -240,16 +240,24 @@ router.post(
   async (req: AuthRequest, res: Response): Promise<void> => {
     const { mode = 'random' } = req.body;
     const month = new Date().toISOString().slice(0, 7);
+    const monthLabel = new Date(`${month}-01`).toLocaleDateString('en-GB', {
+      month: 'long',
+      year: 'numeric',
+    });
 
     // Check draw doesn't already exist for this month
     const { data: existing } = await supabase
       .from('draws')
-      .select('id')
+      .select('id, status')
       .eq('month', month)
-      .single();
+      .maybeSingle();
 
     if (existing) {
-      res.status(400).json({ success: false, error: 'Draw already exists for this month' });
+      const statusLabel = existing.status === 'published' ? 'published' : 'saved as a draft';
+      res.status(409).json({
+        success: false,
+        error: `${monthLabel} draw already exists and is ${statusLabel}. Publish the draft or wait until the next month before running another draw.`,
+      });
       return;
     }
 

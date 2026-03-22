@@ -1,5 +1,6 @@
 ﻿'use client';
 
+import axios from 'axios';
 import { useEffect, useMemo, useState } from 'react';
 
 import { SectionCard, StatCard } from '@/components/dashboard/overview-primitives';
@@ -44,6 +45,21 @@ function formatMonth(month: string) {
   });
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (axios.isAxiosError(error)) {
+    const message = error.response?.data?.error;
+    if (typeof message === 'string' && message.trim()) {
+      return message;
+    }
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
 export default function AdminDrawsPage() {
   const [mode, setMode] = useState<'random' | 'algorithmic'>('random');
   const [simulation, setSimulation] = useState<DrawResult | null>(null);
@@ -62,7 +78,7 @@ export default function AdminDrawsPage() {
       const res = await api.get('/draws/admin/all');
       setDraws(res.data.data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load draws');
+      setError(getErrorMessage(err, 'Failed to load draws'));
     }
   };
 
@@ -71,7 +87,7 @@ export default function AdminDrawsPage() {
       const res = await api.get('/draws/admin/pool-preview');
       setPrizePoolPreview((res.data?.data as PrizePoolPreview | null) ?? null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load prize pool preview');
+      setError(getErrorMessage(err, 'Failed to load prize pool preview'));
     }
   };
 
@@ -84,7 +100,7 @@ export default function AdminDrawsPage() {
       setSimulation(res.data.data);
       setPrizePoolPreview((res.data?.data as DrawResult | null) ?? null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Simulation failed');
+      setError(getErrorMessage(err, 'Simulation failed'));
     } finally {
       setLoading(false);
     }
@@ -99,7 +115,7 @@ export default function AdminDrawsPage() {
       await Promise.all([fetchDraws(), fetchPrizePoolPreview()]);
       setSimulation(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Draw run failed');
+      setError(getErrorMessage(err, 'Draw run failed'));
     } finally {
       setRunning(false);
     }
@@ -111,13 +127,20 @@ export default function AdminDrawsPage() {
       await api.post(`/draws/${id}/publish`);
       await fetchDraws();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Publish failed');
+      setError(getErrorMessage(err, 'Publish failed'));
     }
   };
 
   const draftCount = useMemo(() => draws.filter((draw) => draw.status === 'draft').length, [draws]);
   const publishedCount = useMemo(() => draws.filter((draw) => draw.status === 'published').length, [draws]);
   const livePoolTotal = prizePoolPreview?.prize_pool_total ?? 0;
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const currentMonthDraw = useMemo(
+    () => draws.find((draw) => draw.month === currentMonth) ?? null,
+    [currentMonth, draws],
+  );
+  const currentMonthStatusLabel =
+    currentMonthDraw?.status === 'published' ? 'published' : currentMonthDraw ? 'saved as a draft' : null;
 
   return (
     <div>
@@ -236,12 +259,18 @@ export default function AdminDrawsPage() {
               <button
                 type="button"
                 onClick={handleRunDraw}
-                disabled={running}
+                disabled={running || Boolean(currentMonthDraw)}
                 className="flex-1 rounded-xl bg-[#10b981] py-3 text-sm font-semibold text-[#0a0a0a] transition hover:bg-emerald-400 disabled:opacity-50"
               >
-                {running ? 'Running...' : 'Run Draw'}
+                {running ? 'Running...' : currentMonthDraw ? 'Draw Already Created' : 'Run Draw'}
               </button>
             </div>
+
+            {currentMonthDraw ? (
+              <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-100">
+                {formatMonth(currentMonth)} already has a draw that is {currentMonthStatusLabel}. Publish the draft in the list below or wait until next month before running another draw.
+              </div>
+            ) : null}
           </div>
         </SectionCard>
 

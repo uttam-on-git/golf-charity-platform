@@ -35,7 +35,6 @@ export default function RegisterPage() {
         const res = await api.get('/charities');
         const nextCharities = Array.isArray(res.data?.data) ? res.data.data : [];
         setCharities(nextCharities);
-        setCharityId(nextCharities[0]?.id ?? '');
       } catch (err) {
         if (axios.isAxiosError(err)) {
           setError(err.response?.data?.error || 'Unable to load charities right now.');
@@ -55,14 +54,15 @@ export default function RegisterPage() {
     [charities],
   );
 
-  const selectedCharity = charities.find((charity) => charity.id === charityId) ?? null;
+  const effectiveCharityId = charityId || charities[0]?.id || '';
+  const selectedCharity = charities.find((charity) => charity.id === effectiveCharityId) ?? null;
 
   const handleSubmit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
     setLoading(true);
     try {
-      await register(email, password, fullName, charityId);
+      await register(email, password, fullName, effectiveCharityId);
       router.push('/login?registered=true');
     } catch (err) {
       if (axios.isAxiosError(err)) {
@@ -242,7 +242,7 @@ export default function RegisterPage() {
                   </label>
                   <select
                     id="register-charity"
-                    value={charityId}
+                    value={effectiveCharityId}
                     onChange={(event) => setCharityId(event.target.value)}
                     disabled={charityLoading || charities.length === 0}
                     className="w-full rounded-xl border border-zinc-800 bg-[#09090b] px-4 py-3 text-sm text-white outline-none transition focus:border-[#10b981] focus:ring-2 focus:ring-[#10b981]/20 disabled:opacity-60"
@@ -272,7 +272,7 @@ export default function RegisterPage() {
 
               <button
                 type="submit"
-                disabled={loading || charityLoading || !charityId}
+                disabled={loading || charityLoading || !effectiveCharityId}
                 className="w-full btn-glow rounded-xl bg-emerald-500 py-3.5 text-sm font-semibold text-[#0a0a0a] transition hover:bg-emerald-400 disabled:opacity-50"
               >
                 {loading ? 'Creating account...' : 'Create Account'}
